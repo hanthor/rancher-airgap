@@ -20,26 +20,34 @@ metadata:
   name: rancher-airgap-files-k3s
 spec:
   files:
+    # Installation scripts
     - path: https://raw.githubusercontent.com/k3s-io/k3s/refs/heads/release-${vK3Smodified}/install.sh
       name: install.sh
+    # Linux AMD64
     - path: https://github.com/k3s-io/k3s/releases/download/v${vK3S}%2Bk3s1/k3s
       name: k3s
     - path: https://github.com/k3s-io/k3s/releases/download/v${vK3S}%2Bk3s1/k3s-airgap-images-amd64.tar.zst
       name: k3s-airgap-images-amd64.tar.zst
     - path: https://github.com/k3s-io/k3s/releases/download/v${vK3S}%2Bk3s1/sha256sum-amd64.txt
       name: sha256sum-amd64.txt
+    # Linux ARM64
     - path: https://github.com/k3s-io/k3s/releases/download/v${vK3S}%2Bk3s1/k3s-airgap-images-arm64.tar.zst
       name: k3s-airgap-images-arm64.tar.zst
     - path: https://github.com/k3s-io/k3s/releases/download/v${vK3S}%2Bk3s1/sha256sum-arm64.txt
       name: sha256sum-arm64.txt
     - path: https://github.com/k3s-io/k3s/releases/download/v${vK3S}%2Bk3s1/k3s-arm64
       name: k3s-arm64
+    # SELinux RPMs for Linux
     - path: https://github.com/k3s-io/k3s-selinux/releases/download/v${vK3SSELinux}.latest.1/k3s-selinux-${vK3SSELinux}-1.el9.noarch.rpm
       name: k3s-selinux-${vK3SSELinux}-1.el9.noarch.rpm
     - path: https://github.com/k3s-io/k3s-selinux/releases/download/v${vK3SSELinux}.latest.1/k3s-selinux-${vK3SSELinux}-1.el9.noarch.rpm
       name: k3s-selinux-${vK3SSELinux}-1.el8.noarch.rpm
     - path: https://github.com/k3s-io/k3s-selinux/releases/download/v${vK3SSELinux}.latest.1/k3s-selinux-${vK3SSELinux}-1.el9.noarch.rpm
       name: k3s-selinux-${vK3SSELinux}-1.el7.noarch.rpm
+    # Windows AMD64 (K3s does not have native Windows support - this would be for WSL2)
+    # Note: K3s runs in WSL2 on Windows, using the Linux binary
+    # macOS ARM64 (K3s runs in containers/VMs on macOS)
+    # Note: K3s doesn't have native macOS binaries - runs via Docker Desktop/Rancher Desktop
 ---
 apiVersion: content.hauler.cattle.io/v1
 kind: Images
