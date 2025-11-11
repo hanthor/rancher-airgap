@@ -31,43 +31,39 @@ This document provides a visual overview of the Airgap Release workflow architec
 │                         Parallel Build Phase                            │
 ├────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────┐ │
-│  │  Core Products       │  │  Rancher Products    │  │  OS Deps     │ │
-│  ├──────────────────────┤  ├──────────────────────┤  ├──────────────┤ │
-│  │                      │  │                      │  │              │ │
-│  │  K3s                 │  │  RKE2                │  │  Linux       │ │
-│  │   ├─ amd64          │  │   ├─ amd64          │  │  Windows     │ │
-│  │   └─ arm64          │  │   └─ arm64          │  │  macOS       │ │
-│  │                      │  │                      │  │              │ │
-│  │  ESS-Helm            │  │  Rancher             │  └──────────────┘ │
-│  │   ├─ amd64          │  │   ├─ amd64          │                    │
-│  │   └─ arm64          │  │   └─ arm64          │                    │
-│  │                      │  │                      │                    │
-│  │  Helm                │  │  Longhorn            │                    │
-│  │   ├─ amd64          │  │   ├─ amd64          │                    │
-│  │   └─ arm64          │  │   └─ arm64          │                    │
-│  │                      │  │                      │                    │
-│  │                      │  │  NeuVector           │                    │
-│  │                      │  │   ├─ amd64          │                    │
-│  │                      │  │   └─ arm64          │                    │
-│  │                      │  │                      │                    │
-│  └──────────────────────┘  └──────────────────────┘                    │
+│  ┌──────────────────────┐  ┌──────────────────────────────────────┐   │
+│  │  Core Products       │  │  OS Deps                             │   │
+│  ├──────────────────────┤  ├──────────────────────────────────────┤   │
+│  │                      │  │                                      │   │
+│  │  K3s                 │  │  Linux                               │   │
+│  │   ├─ amd64          │  │  Windows                             │   │
+│  │   └─ arm64          │  │  macOS                               │   │
+│  │                      │  │                                      │   │
+│  │  ESS-Helm            │  └──────────────────────────────────────┘   │
+│  │   ├─ amd64          │                                              │
+│  │   └─ arm64          │                                              │
+│  │                      │                                              │
+│  │  Helm                │                                              │
+│  │   ├─ amd64          │                                              │
+│  │   └─ arm64          │                                              │
+│  │                      │                                              │
+│  └──────────────────────┘                                              │
 │                                                                         │
-│  Matrix Strategy:         Matrix Strategy:         For each OS:        │
-│  - 3 products             - 4 products             - Download packages │
-│  - 2 architectures        - 2 architectures        - Create tarball    │
-│  = 6 parallel jobs        = 8 parallel jobs        = 3 parallel jobs   │
+│  Matrix Strategy:         For each OS:                                 │
+│  - 3 products             - Download packages                          │
+│  - 2 architectures        - Create tarball                             │
+│  = 6 parallel jobs        = 3 parallel jobs                            │
 │                                                                         │
-└───────────────┬────────────────┬─────────────────┬──────────────────────┘
-                │                │                 │
-                ▼                ▼                 ▼
-        ┌──────────┐     ┌──────────┐     ┌──────────┐
-        │ Artifact │     │ Artifact │     │ Artifact │
-        │ Upload   │     │ Upload   │     │ Upload   │
-        └──────────┘     └──────────┘     └──────────┘
-                │                │                 │
-                └────────────────┼─────────────────┘
-                                 │
+└───────────────┬────────────────────────────┬──────────────────────────┘
+                │                            │
+                ▼                            ▼
+        ┌──────────┐                 ┌──────────┐
+        │ Artifact │                 │ Artifact │
+        │ Upload   │                 │ Upload   │
+        └──────────┘                 └──────────┘
+                │                            │
+                └────────────┬───────────────┘
+                             │
                                  ▼
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        Distribution Phase                               │
@@ -103,18 +99,6 @@ Release v1.0.0
 │   ├── k3s-1.33.5-arm64.tar.zst
 │   ├── ess-helm-25.11.0-arm64.tar.zst
 │   └── helm-3.19.0-arm64.tar.zst
-│
-├── Rancher Products (linux/amd64)
-│   ├── rke2-1.33.5-amd64.tar.zst
-│   ├── rancher-2.12.2-amd64.tar.zst
-│   ├── longhorn-1.9.2-amd64.tar.zst
-│   └── neuvector-5.4.6-amd64.tar.zst
-│
-├── Rancher Products (linux/arm64)
-│   ├── rke2-1.33.5-arm64.tar.zst
-│   ├── rancher-2.12.2-arm64.tar.zst
-│   ├── longhorn-1.9.2-arm64.tar.zst
-│   └── neuvector-5.4.6-arm64.tar.zst
 │
 └── OS Dependencies
     ├── linux-dependencies-v1.0.0.tar.gz
@@ -175,10 +159,6 @@ Release v1.0.0
 │    permissions:                                        │
 │      contents: read    ← Can read repo files          │
 │                                                        │
-│  build-rancher-products:                              │
-│    permissions:                                        │
-│      contents: read    ← Can read repo files          │
-│                                                        │
 │  build-os-dependencies:                               │
 │    permissions:                                        │
 │      contents: read    ← Can read repo files          │
@@ -230,20 +210,18 @@ Release v1.0.0
 ├───────────────────────────────────────────────────────────┤
 │                                                           │
 │  Core Products:        5-15 min per product/arch         │
-│  Rancher Products:     10-30 min per product/arch        │
 │  OS Dependencies:      5-10 min per OS                   │
 │  Release Creation:     2-5 min                           │
 │  R2 Upload:            5-15 min                          │
 │                                                           │
-│  Total (parallel):     30-90 min                         │
-│  Total (sequential):   2-4 hours                         │
+│  Total (parallel):     15-30 min                         │
+│  Total (sequential):   30-60 min                         │
 │                                                           │
 │  Parallelization:                                         │
 │  ├─ Core: 6 parallel jobs (3 products × 2 arch)         │
-│  ├─ Rancher: 8 parallel jobs (4 products × 2 arch)      │
 │  └─ OS: 3 parallel jobs                                  │
 │                                                           │
-│  Total parallel jobs: 17                                 │
+│  Total parallel jobs: 9                                  │
 │                                                           │
 └───────────────────────────────────────────────────────────┘
 ```
@@ -256,7 +234,7 @@ Release v1.0.0
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
 │  Per Release:                                            │
-│  ├─ Compute: ~120-240 min                               │
+│  ├─ Compute: ~45-90 min                                 │
 │  ├─ Cost: FREE (public repo)                            │
 │  └─ Private repo: ~$0.50-1.00                           │
 │                                                          │
@@ -266,16 +244,16 @@ Release v1.0.0
 │  Cloudflare R2 (Optional)                                │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
-│  Per Release (~20 GB):                                   │
-│  ├─ Storage: $0.015/GB/month = $0.30/month              │
-│  ├─ Upload: Class A ops = $0.00009                      │
+│  Per Release (~8 GB):                                    │
+│  ├─ Storage: $0.015/GB/month = $0.12/month              │
+│  ├─ Upload: Class A ops = $0.00004                      │
 │  ├─ Download: $0 (no egress fees!)                      │
-│  └─ Total: ~$0.30/month                                 │
+│  └─ Total: ~$0.12/month                                 │
 │                                                          │
 │  100 downloads/month:                                    │
 │  ├─ GitHub: $0 egress                                   │
 │  ├─ R2: $0 egress                                       │
-│  └─ AWS S3: ~$180 egress (for comparison)              │
+│  └─ AWS S3: ~$72 egress (for comparison)               │
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 ```

@@ -42,7 +42,6 @@ Once complete, go to **Releases** and you'll find:
 - `ess-helm-25.11.0-arm64.tar.zst`
 - `helm-3.19.0-amd64.tar.zst`
 - `helm-3.19.0-arm64.tar.zst`
-- `rke2-*`, `rancher-*`, `longhorn-*`, `neuvector-*` (legacy products)
 - `linux-dependencies-v1.0.0.tar.gz`
 - `windows-wsl2-dependencies-v1.0.0.tar.gz`
 - `macos-dependencies-v1.0.0.tar.gz`

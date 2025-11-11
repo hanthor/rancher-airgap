@@ -40,16 +40,7 @@ Builds airgap stores for:
 
 **Architectures**: linux/amd64, linux/arm64
 
-### 2. Build Rancher Products
-Builds airgap stores for legacy Rancher ecosystem:
-- **RKE2**: Rancher Kubernetes Engine 2
-- **Rancher**: Multi-Cluster Manager
-- **Longhorn**: Cloud-native storage
-- **NeuVector**: Container security
-
-**Architectures**: linux/amd64, linux/arm64
-
-### 3. Build OS Dependencies
+### 2. Build OS Dependencies
 Creates dependency tarballs for each target operating system:
 - **Linux**: Full RPM packages for RHEL/CentOS-based systems
 - **Windows WSL2**: Dependencies for K3s in WSL2
@@ -60,7 +51,7 @@ Creates dependency tarballs for each target operating system:
 - Creates release notes
 - Uploads all tarballs to the GitHub Release
 
-### 5. Upload to Cloudflare R2 (Optional)
+### 4. Upload to Cloudflare R2 (Optional)
 - Uploads all artifacts to Cloudflare R2 storage
 - Requires R2 credentials in repository secrets
 
@@ -100,6 +91,8 @@ k3s-1.33.5-amd64.tar.zst
 k3s-1.33.5-arm64.tar.zst
 ess-helm-25.11.0-amd64.tar.zst
 ess-helm-25.11.0-arm64.tar.zst
+helm-3.19.0-amd64.tar.zst
+helm-3.19.0-arm64.tar.zst
 ```
 
 ### OS Dependencies

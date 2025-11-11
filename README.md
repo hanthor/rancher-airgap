@@ -46,29 +46,10 @@ fetch -> validate -> save -> | <airgap> | -> load -> validate -> distribute
 - [hauler/ess-helm](hauler/ess-helm/README.md) - provides the content manifest for Element Server Suite
   - currently supports: `ESS Helm Chart: v25.11.0`
   - includes: Synapse, Element Web, Element Admin, MAS, Matrix RTC, PostgreSQL, HAProxy
-
-### Featured Addons
-
 - [hauler/helm](hauler/helm/README.md) - provides the content manifest for Helm
   - currently supports: `Helm: v3.19.0`
 
-### Legacy Rancher Components
-
-The following components are from the original Rancher Airgap project and are maintained for reference:
-
-- [hauler/rke2](hauler/rke2/README.md) - Rancher Kubernetes (RKE2) - `RKE2: v1.33.5`
-- [hauler/rancher](hauler/rancher/README.md) - Rancher Multi-Cluster Manager - `Rancher: v2.12.2`
-- [hauler/longhorn](hauler/longhorn/README.md) - Rancher Longhorn - `Longhorn: v1.9.2`
-- [hauler/neuvector](hauler/neuvector/README.md) - Rancher NeuVector - `NeuVector: v5.4.6`
-- [hauler/harvester](hauler/harvester/README.md) - Rancher Harvester - `Harvester: v1.6.1`
-- [hauler/gitea](hauler/gitea/README.md) - Gitea - `Gitea: v1.24.6`
-- [hauler/vault](hauler/vault/README.md) - Vault - `Vault: v1.20.4`
-- [hauler/kubevip](hauler/kubevip/README.md) - KubeVip - `KubeVip: v0.5.11`
-- [hauler/kubewarden](hauler/kubewarden/README.md) - KubeWarden - `KubeWarden: v1.29.0`
-- [hauler/cosign](hauler/cosign/README.md) - Cosign - `Cosign: v2.6.1`
-- [hauler/hauler](hauler/hauler/README.md) - Hauler - `Hauler: v1.3.0`
-
-**Note:** This repository has been repurposed to focus on K3s + ESS deployments for airgapped Matrix communication infrastructure. The Rancher components are preserved for users who may need them.
+**Note:** This repository focuses on K3s + ESS deployments for airgapped Matrix communication infrastructure.
 
 ## Automated Releases
 

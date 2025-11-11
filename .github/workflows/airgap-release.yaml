@@ -86,77 +86,6 @@ jobs:
           path: hauler/${{ matrix.product.name }}/*.tar.zst
           retention-days: 7
 
-  # Build legacy Rancher products
-  build-rancher-products:
-    name: Build Rancher Products
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        product:
-          - name: rke2
-            script: hauler/scripts/rke2/hauler-rke2.sh
-            manifest: hauler/rke2/rancher-airgap-rke2.yaml
-            version_var: vRKE2
-          - name: rancher
-            script: hauler/scripts/rancher/hauler-rancher.sh
-            manifest: hauler/rancher/rancher-airgap-rancher.yaml
-            version_var: vRancher
-          - name: longhorn
-            script: hauler/scripts/longhorn/hauler-longhorn.sh
-            manifest: hauler/longhorn/rancher-airgap-longhorn.yaml
-            version_var: vLonghorn
-          - name: neuvector
-            script: hauler/scripts/neuvector/hauler-neuvector.sh
-            manifest: hauler/neuvector/rancher-airgap-neuvector.yaml
-            version_var: vNeuVector
-        arch:
-          - linux/amd64
-          - linux/arm64
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Install Hauler
-        run: |
-          curl -sfL https://get.hauler.dev | bash
-          hauler version
-
-      - name: Extract Version
-        id: version
-        run: |
-          VERSION=$(grep "export ${{ matrix.product.version_var }}=" ${{ matrix.product.script }} | head -1 | cut -d'=' -f2)
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Product version: ${VERSION}"
-
-      - name: Build Hauler Store
-        run: |
-          cd $(dirname ${{ matrix.product.manifest }})
-          ARCH_NAME=$(echo "${{ matrix.arch }}" | tr '/' '-')
-          hauler store sync \
-            --store ${ARCH_NAME}-store \
-            --platform ${{ matrix.arch }} \
-            --filename $(basename ${{ matrix.product.manifest }})
-          hauler store info --store ${ARCH_NAME}-store
-
-      - name: Save Hauler Store
-        run: |
-          cd $(dirname ${{ matrix.product.manifest }})
-          ARCH_NAME=$(echo "${{ matrix.arch }}" | tr '/' '-')
-          ARCH_SHORT=$(echo "${{ matrix.arch }}" | cut -d'/' -f2)
-          hauler store save \
-            --store ${ARCH_NAME}-store \
-            --filename ${{ matrix.product.name }}-${{ steps.version.outputs.version }}-${ARCH_SHORT}.tar.zst
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.product.name }}-${{ steps.version.outputs.version }}-${{ matrix.arch == 'linux/amd64' && 'amd64' || 'arm64' }}
-          path: hauler/${{ matrix.product.name }}/*.tar.zst
-          retention-days: 7
-
   # Build OS-specific dependency tarballs
   build-os-dependencies:
     name: Build OS Dependencies
@@ -223,7 +152,7 @@ jobs:
   # Create GitHub Release and upload all artifacts
   create-release:
     name: Create GitHub Release
-    needs: [build-core-products, build-rancher-products, build-os-dependencies]
+    needs: [build-core-products, build-os-dependencies]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -303,7 +232,7 @@ jobs:
   # Optional: Upload to Cloudflare R2
   upload-to-r2:
     name: Upload to Cloudflare R2
-    needs: [build-core-products, build-rancher-products, build-os-dependencies]
+    needs: [build-core-products, build-os-dependencies]
     runs-on: ubuntu-latest
     permissions:
       contents: read
