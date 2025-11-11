@@ -66,6 +66,28 @@ git tag v1.0.0 && git push origin v1.0.0
 ```
 Then download from [Releases](https://github.com/hanthor/rancher-airgap/releases) and follow the [K3s + ESS Quickstart Guide](examples/k3s-ess-quickstart.md).
 
+## Automated Airgap Testing 🧪
+
+This repository includes a comprehensive CI workflow to test airgapped deployments and ensure all assets are available locally.
+
+**📖 Testing Documentation:**
+- [Airgap Testing Guide](.github/workflows/README-AIRGAP-TESTING.md) - Complete testing workflow documentation
+- [Quick Reference](.github/workflows/AIRGAP-TESTING-QUICKREF.md) - Common commands and troubleshooting
+
+**Key Features:**
+- ✅ Automated testing on K3d cluster
+- ✅ Network monitoring to detect external access
+- ✅ Image source verification
+- ✅ OS package repository validation
+- ✅ Iterative improvement workflow
+
+**Run Test:**
+```bash
+gh workflow run test-airgap.yaml
+```
+
+The test validates that K3s and ESS can be deployed completely from local sources without internet access.
+
 ## Hauler Installation
 
 ```bash
