@@ -23,6 +23,8 @@ jobs:
   build-core-products:
     name: Build Core Products
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -88,6 +90,8 @@ jobs:
   build-rancher-products:
     name: Build Rancher Products
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -157,6 +161,8 @@ jobs:
   build-os-dependencies:
     name: Build OS Dependencies
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -219,6 +225,8 @@ jobs:
     name: Create GitHub Release
     needs: [build-core-products, build-rancher-products, build-os-dependencies]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Checkout Repository
@@ -297,6 +305,8 @@ jobs:
     name: Upload to Cloudflare R2
     needs: [build-core-products, build-rancher-products, build-os-dependencies]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     if: |
       (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_r2 == 'true') ||
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
