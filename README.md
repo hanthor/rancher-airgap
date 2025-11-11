@@ -72,13 +72,18 @@ The following components are from the original Rancher Airgap project and are ma
 
 ## Automated Releases
 
-This repository includes a GitHub Action workflow that automatically builds and releases airgapped image stores and OS dependencies. See the [Airgap Release Workflow Documentation](.github/workflows/README.md) for details.
+This repository includes a GitHub Action workflow that automatically builds and releases airgapped image stores and OS dependencies.
 
-**Quick Start:**
-1. Push a tag (e.g., `v1.0.0`) to trigger a release
-2. Download image stores and dependencies from the GitHub Release
-3. Transfer across the airgap
-4. Follow the [K3s + ESS Quickstart Guide](examples/k3s-ess-quickstart.md)
+**📖 Documentation:**
+- [Quick Start Guide](.github/workflows/QUICKSTART.md) - Get started in 5 minutes
+- [Workflow Documentation](.github/workflows/README.md) - Detailed workflow information
+- [Secrets Configuration](.github/workflows/SECRETS.md) - Configure Cloudflare R2 uploads
+
+**Quick Release Process:**
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+Then download from [Releases](https://github.com/hanthor/rancher-airgap/releases) and follow the [K3s + ESS Quickstart Guide](examples/k3s-ess-quickstart.md).
 
 ## Hauler Installation
 
