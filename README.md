@@ -80,6 +80,7 @@ This repository includes a comprehensive CI workflow to test airgapped deploymen
 - ✅ Image source verification
 - ✅ OS package repository validation
 - ✅ Iterative improvement workflow
+- ✅ **PR comments** with test results overview
 
 **Run Test:**
 ```bash

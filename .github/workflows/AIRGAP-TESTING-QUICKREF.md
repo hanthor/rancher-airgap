@@ -15,13 +15,16 @@ Actions → Test Airgap K3s/ESS Deployment → Run workflow
 ### View Results
 
 ```bash
+# View PR comment (on pull requests)
+# The test report is automatically posted as a PR comment
+
 # List workflow runs
 gh run list --workflow=test-airgap.yaml
 
 # View specific run
 gh run view <run-id>
 
-# Download artifacts
+# Download artifacts (for detailed logs)
 gh run download <run-id>
 ```
 

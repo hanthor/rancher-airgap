@@ -26,8 +26,21 @@ gh run watch
 
 ### 3. Review Results
 
+**On Pull Requests:**
+
+The test results are automatically posted as a comment on the PR. Look for the comment titled "🧪 Airgap Test Results" which includes:
+- Test summary with versions and status
+- Pod status overview
+- Image verification results
+- Network activity summary
+- Recommendations for improvements
+
+The comment updates automatically on each test run.
+
+**Download Detailed Logs:**
+
 ```bash
-# Download test artifacts
+# Download test artifacts (for detailed analysis)
 gh run download <run-id>
 
 # View the airgap report

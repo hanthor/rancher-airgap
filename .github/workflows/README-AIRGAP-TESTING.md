@@ -108,6 +108,21 @@ debug_enabled: true
 
 ## Understanding Results
 
+### PR Comments
+
+When the workflow runs on a pull request, it automatically posts a summary comment with the test results. This comment includes:
+
+- **Test Summary**: Date, versions, domain
+- **Components Tested**: Checklist of what was validated
+- **Pod Status**: Current state of all ESS pods
+- **Image Verification**: List of container images used
+- **Network Activity**: Count of external connections detected
+- **Recommendations**: Suggested next steps
+
+The comment is automatically updated on subsequent runs, so you always see the latest results without downloading artifacts.
+
+**Note**: The full detailed logs are still available as downloadable artifacts.
+
 ### Success Indicators
 
 ✅ **All checks passed**:
