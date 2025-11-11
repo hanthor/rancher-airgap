@@ -70,6 +70,16 @@ The following components are from the original Rancher Airgap project and are ma
 
 **Note:** This repository has been repurposed to focus on K3s + ESS deployments for airgapped Matrix communication infrastructure. The Rancher components are preserved for users who may need them.
 
+## Automated Releases
+
+This repository includes a GitHub Action workflow that automatically builds and releases airgapped image stores and OS dependencies. See the [Airgap Release Workflow Documentation](.github/workflows/README.md) for details.
+
+**Quick Start:**
+1. Push a tag (e.g., `v1.0.0`) to trigger a release
+2. Download image stores and dependencies from the GitHub Release
+3. Transfer across the airgap
+4. Follow the [K3s + ESS Quickstart Guide](examples/k3s-ess-quickstart.md)
+
 ## Hauler Installation
 
 ```bash
