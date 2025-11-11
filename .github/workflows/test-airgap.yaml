@@ -61,7 +61,7 @@ jobs:
       - name: Build K3s Hauler Store
         run: |
           echo "::group::Syncing K3s Store"
-          cd hauler/k3s
+          cd hauler/k3s || exit 1
           hauler store sync \
             --store k3s-store \
             --platform linux/amd64 \
@@ -72,7 +72,7 @@ jobs:
       - name: Build ESS Hauler Store
         run: |
           echo "::group::Syncing ESS Store"
-          cd hauler/ess-helm
+          cd hauler/ess-helm || exit 1
           hauler store sync \
             --store ess-store \
             --platform linux/amd64 \
@@ -83,7 +83,7 @@ jobs:
       - name: Build Helm Hauler Store
         run: |
           echo "::group::Syncing Helm Store"
-          cd hauler/helm
+          cd hauler/helm || exit 1
           hauler store sync \
             --store helm-store \
             --filename rancher-airgap-helm.yaml
@@ -94,7 +94,7 @@ jobs:
         run: |
           echo "::group::Creating OS Repository"
           mkdir -p /tmp/os-repo
-          cd /tmp/os-repo
+          cd /tmp/os-repo || exit 1
           
           # Note: This is a demonstration step for Ubuntu/Debian systems
           # For RHEL/CentOS airgap, use createrepo-c and repotrack instead
@@ -152,25 +152,25 @@ jobs:
           
           # Start registry for K3s
           echo "Starting K3s registry on port 5001..."
-          cd hauler/k3s
+          cd hauler/k3s || exit 1
           nohup hauler store serve registry --port 5001 --store k3s-store > /tmp/k3s-registry.log 2>&1 &
           echo $! > /tmp/k3s-registry.pid
           
           # Start registry for ESS
           echo "Starting ESS registry on port 5002..."
-          cd ../ess-helm
+          cd ../ess-helm || exit 1
           nohup hauler store serve registry --port 5002 --store ess-store > /tmp/ess-registry.log 2>&1 &
           echo $! > /tmp/ess-registry.pid
           
           # Start fileserver for binaries
           echo "Starting K3s fileserver on port 8080..."
-          cd ../k3s
+          cd ../k3s || exit 1
           nohup hauler store serve fileserver --port 8080 --store k3s-store > /tmp/fileserver.log 2>&1 &
           echo $! > /tmp/fileserver.pid
           
           # Start fileserver for Helm
           echo "Starting Helm fileserver on port 8081..."
-          cd ../helm
+          cd ../helm || exit 1
           nohup hauler store serve fileserver --port 8081 --store helm-store > /tmp/helm-fileserver.log 2>&1 &
           echo $! > /tmp/helm-fileserver.pid
           
@@ -420,7 +420,7 @@ jobs:
               
               # Alternative: Export chart from Hauler store and install locally
               echo "Extracting chart from Hauler store..."
-              cd hauler/ess-helm
+              cd hauler/ess-helm || exit 1
               hauler store copy --store ess-store --content-type chart --name matrix-stack --destination /tmp/charts || true
               
               if [ -f /tmp/charts/matrix-stack-${ESS_CHART_VERSION}.tgz ]; then
