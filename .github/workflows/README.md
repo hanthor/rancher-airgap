@@ -2,7 +2,11 @@
 
 This workflow automates the creation of airgapped image stores and OS dependencies for deploying K3s, Element Server Suite (ESS), and other Rancher products in disconnected environments.
 
-**📖 New to this workflow? Start with the [Quick Start Guide](QUICKSTART.md)!**
+**📖 Documentation Navigation:**
+- **[Quick Start Guide](QUICKSTART.md)** - Get started in 5 minutes ⭐
+- **[Architecture Overview](ARCHITECTURE.md)** - Visual workflow diagrams
+- **[Secrets Configuration](SECRETS.md)** - Configure Cloudflare R2 uploads
+- **This Document** - Detailed workflow reference
 
 ## Trigger Methods
 
