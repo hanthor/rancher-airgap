@@ -4,3 +4,16 @@
 # The files are ignored in the repository and not pushed to source control.
 
 **/.DS_Store
+
+# Hauler build artifacts
+**/store/
+**/amd64/
+**/arm64/
+**/*-store/
+*.tar.zst
+*.tar.gz
+*.tar
+
+# Temporary files
+/tmp/
+*.tmp
