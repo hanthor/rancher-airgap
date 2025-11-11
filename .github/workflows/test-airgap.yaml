@@ -96,11 +96,11 @@ jobs:
           mkdir -p /tmp/os-repo
           cd /tmp/os-repo
           
-          # Install createrepo
-          sudo apt-get install -y createrepo-c yum-utils
+          # Note: This is a demonstration step for Ubuntu/Debian systems
+          # For RHEL/CentOS airgap, use createrepo-c and repotrack instead
           
-          # Download packages (these would be RPMs in real scenario, simulating with debs)
-          # In a real airgap scenario, use repotrack for RHEL/CentOS
+          # Download packages (simulating airgap package collection)
+          echo "Downloading common packages for offline repository..."
           sudo apt-get download \
             iptables \
             git \
@@ -110,12 +110,17 @@ jobs:
             gnupg \
             lsb-release \
             apt-transport-https \
-            software-properties-common || true
+            software-properties-common 2>&1 || echo "Some packages may have failed to download"
           
           # Create package list
-          ls -1 > package-list.txt
+          ls -1 *.deb > package-list.txt 2>/dev/null || echo "No packages downloaded" > package-list.txt
           echo "OS Repository contents:"
           cat package-list.txt
+          
+          # For Debian/Ubuntu, you would use dpkg-scanpackages to create a repository
+          # For RHEL/CentOS, you would use createrepo_c
+          echo ""
+          echo "Package count: $(ls -1 *.deb 2>/dev/null | wc -l)"
           echo "::endgroup::"
 
       # ============================================
@@ -141,35 +146,68 @@ jobs:
       - name: Start Hauler Registry and Fileserver
         run: |
           echo "::group::Starting Hauler Services"
+          
+          # Create log file placeholders to ensure they exist
+          touch /tmp/k3s-registry.log /tmp/ess-registry.log /tmp/fileserver.log /tmp/helm-fileserver.log
+          
           # Start registry for K3s
+          echo "Starting K3s registry on port 5001..."
           cd hauler/k3s
           nohup hauler store serve registry --port 5001 --store k3s-store > /tmp/k3s-registry.log 2>&1 &
           echo $! > /tmp/k3s-registry.pid
           
           # Start registry for ESS
+          echo "Starting ESS registry on port 5002..."
           cd ../ess-helm
           nohup hauler store serve registry --port 5002 --store ess-store > /tmp/ess-registry.log 2>&1 &
           echo $! > /tmp/ess-registry.pid
           
           # Start fileserver for binaries
+          echo "Starting K3s fileserver on port 8080..."
           cd ../k3s
           nohup hauler store serve fileserver --port 8080 --store k3s-store > /tmp/fileserver.log 2>&1 &
           echo $! > /tmp/fileserver.pid
           
           # Start fileserver for Helm
+          echo "Starting Helm fileserver on port 8081..."
           cd ../helm
           nohup hauler store serve fileserver --port 8081 --store helm-store > /tmp/helm-fileserver.log 2>&1 &
           echo $! > /tmp/helm-fileserver.pid
           
           # Wait for services to start
+          echo "Waiting for services to initialize..."
           sleep 10
           
           # Verify services are running
           echo "Testing Hauler services..."
-          curl -f http://localhost:5001/v2/_catalog || (cat /tmp/k3s-registry.log && exit 1)
-          curl -f http://localhost:5002/v2/_catalog || (cat /tmp/ess-registry.log && exit 1)
-          curl -f http://localhost:8080 || (cat /tmp/fileserver.log && exit 1)
-          curl -f http://localhost:8081 || (cat /tmp/helm-fileserver.log && exit 1)
+          
+          if ! curl -f http://localhost:5001/v2/_catalog 2>&1; then
+            echo "::error::K3s registry failed to start on port 5001"
+            cat /tmp/k3s-registry.log
+            exit 1
+          fi
+          echo "✅ K3s registry is running"
+          
+          if ! curl -f http://localhost:5002/v2/_catalog 2>&1; then
+            echo "::error::ESS registry failed to start on port 5002"
+            cat /tmp/ess-registry.log
+            exit 1
+          fi
+          echo "✅ ESS registry is running"
+          
+          if ! curl -f http://localhost:8080 2>&1; then
+            echo "::error::K3s fileserver failed to start on port 8080"
+            cat /tmp/fileserver.log
+            exit 1
+          fi
+          echo "✅ K3s fileserver is running"
+          
+          if ! curl -f http://localhost:8081 2>&1; then
+            echo "::error::Helm fileserver failed to start on port 8081"
+            cat /tmp/helm-fileserver.log
+            exit 1
+          fi
+          echo "✅ Helm fileserver is running"
           
           echo "All Hauler services started successfully"
           echo "::endgroup::"
@@ -656,25 +694,54 @@ jobs:
         if: failure()
         run: |
           echo "::group::Debug Information"
-          echo "=== K3d Cluster Info ==="
-          kubectl cluster-info dump || true
           
-          echo "=== ESS Namespace Events ==="
-          kubectl get events -n ess --sort-by='.lastTimestamp' || true
-          
-          echo "=== Pod Descriptions ==="
-          kubectl describe pods -n ess || true
+          # Check if k3d cluster exists before running kubectl
+          if k3d cluster list 2>/dev/null | grep -q "airgap-test"; then
+            echo "=== K3d Cluster Info ==="
+            kubectl cluster-info dump || echo "Failed to get cluster info"
+            
+            echo "=== ESS Namespace Events ==="
+            kubectl get events -n ess --sort-by='.lastTimestamp' || echo "Failed to get events"
+            
+            echo "=== Pod Descriptions ==="
+            kubectl describe pods -n ess || echo "Failed to describe pods"
+          else
+            echo "⚠️  K3d cluster 'airgap-test' does not exist or was already deleted"
+          fi
           
           echo "=== Hauler Registry Logs ==="
-          cat /tmp/k3s-registry.log || true
-          cat /tmp/ess-registry.log || true
+          if [ -f /tmp/k3s-registry.log ]; then
+            cat /tmp/k3s-registry.log
+          else
+            echo "No K3s registry log found at /tmp/k3s-registry.log"
+          fi
+          
+          if [ -f /tmp/ess-registry.log ]; then
+            cat /tmp/ess-registry.log
+          else
+            echo "No ESS registry log found at /tmp/ess-registry.log"
+          fi
           
           echo "=== Hauler Fileserver Logs ==="
-          cat /tmp/fileserver.log || true
-          cat /tmp/helm-fileserver.log || true
+          if [ -f /tmp/fileserver.log ]; then
+            cat /tmp/fileserver.log
+          else
+            echo "No fileserver log found at /tmp/fileserver.log"
+          fi
+          
+          if [ -f /tmp/helm-fileserver.log ]; then
+            cat /tmp/helm-fileserver.log
+          else
+            echo "No Helm fileserver log found at /tmp/helm-fileserver.log"
+          fi
           
           echo "=== Network Monitor Log ==="
-          cat /tmp/network-activity.log || true
+          if [ -f /tmp/network-activity.log ]; then
+            cat /tmp/network-activity.log
+          else
+            echo "No network activity log found at /tmp/network-activity.log"
+          fi
+          
           echo "::endgroup::"
 
       - name: Cleanup
