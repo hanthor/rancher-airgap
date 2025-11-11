@@ -272,14 +272,40 @@ jobs:
       # PHASE 4: DEPLOY FROM LOCAL SOURCES ONLY
       # ============================================
 
-      - name: Configure K3s to Use Local Registry
+      - name: Configuring Local Registry
+        shell: bash
         run: |
           echo "::group::Configuring Local Registry"
-          # Get k3d container name
-          K3D_CONTAINER=$(docker ps --filter "name=k3d-airgap-test-server" --format "{{.Names}}")
-          
-          # Create registries.yaml for K3s
-          cat > /tmp/registries.yaml << EOF
+
+          # Try to find the k3d server container (handle naming like k3d-<cluster>-server-0)
+          # Prefer exact server container names, fallback to any container that starts with k3d-<cluster>-server
+          CLUSTER_NAME="airgap-test"
+          K3D_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "^k3d-${CLUSTER_NAME}-server(-|$)" | head -n1 || true)
+
+          # If that failed, attempt a looser match (older/simpler pattern)
+          if [ -z "$K3D_CONTAINER" ]; then
+            K3D_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "^k3d-${CLUSTER_NAME}" | grep -E "server" | head -n1 || true)
+          fi
+
+          # Final fallback: try any container with k3d and server in the name
+          if [ -z "$K3D_CONTAINER" ]; then
+            K3D_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E 'k3d-.*server' | head -n1 || true)
+          fi
+
+          if [ -z "$K3D_CONTAINER" ]; then
+            echo "::error::Could not find the k3d server container for cluster '${CLUSTER_NAME}'. Aborting registry config."
+            echo "=== docker ps ==="
+            docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+            echo "=== k3d cluster list ==="
+            k3d cluster list || true
+            echo "::endgroup::"
+            exit 1
+          fi
+
+          echo "Using container: ${K3D_CONTAINER}"
+
+          # Create registries.yaml
+          cat > /tmp/registries.yaml <<'EOF'
           mirrors:
             "docker.io":
               endpoint:
@@ -303,14 +329,15 @@ jobs:
               tls:
                 insecure_skip_verify: true
           EOF
-          
-          # Copy registries.yaml to k3d container
-          docker cp /tmp/registries.yaml ${K3D_CONTAINER}:/etc/rancher/k3s/registries.yaml
-          
-          # Restart k3s to apply registry config
-          docker exec ${K3D_CONTAINER} sh -c "killall k3s || true"
+
+          # Ensure target directory exists inside the container, then copy
+          docker exec "${K3D_CONTAINER}" sh -c "mkdir -p /etc/rancher/k3s"
+          docker cp /tmp/registries.yaml "${K3D_CONTAINER}":/etc/rancher/k3s/registries.yaml
+
+          # Restart k3s to apply registry config (graceful fallback)
+          docker exec "${K3D_CONTAINER}" sh -c "killall k3s || true"
           sleep 10
-          
+
           echo "Registry configuration applied"
           echo "::endgroup::"
 
@@ -530,233 +557,4 @@ jobs:
           CRITICAL_PODS=(
             "synapse"
             "element-web"
-            "matrix-authentication-service"
-            "postgresql"
-          )
-          
-          for pod in "${CRITICAL_PODS[@]}"; do
-            echo "Checking $pod..."
-            if kubectl get pods -n ess | grep -q "$pod.*Running"; then
-              echo "✅ $pod is running"
-            else
-              echo "❌ $pod is not running"
-              kubectl describe pods -n ess -l "app.kubernetes.io/name=$pod" || true
-            fi
-          done
-          echo "::endgroup::"
-
-      - name: Test OS Package Repository
-        run: |
-          echo "::group::OS Repository Verification"
-          # Verify the OS repo we created
-          if [ -d /tmp/os-repo ]; then
-            echo "OS Repository contents:"
-            ls -lah /tmp/os-repo
-            echo ""
-            echo "Package count: $(ls -1 /tmp/os-repo/*.deb 2>/dev/null | wc -l || echo 0)"
-          fi
-          echo "::endgroup::"
-
-      - name: Generate Airgap Test Report
-        if: always()
-        run: |
-          echo "::group::Airgap Test Report"
-          cat > /tmp/airgap-report.md << 'REPORT'
-          # Airgap K3s/ESS Test Report
-          
-          ## Test Summary
-          
-          **Date:** $(date)
-          **K3s Version:** $K3S_VERSION
-          **ESS Chart Version:** $ESS_CHART_VERSION
-          **Domain:** $DOMAIN
-          
-          ## Components Tested
-          
-          - ✅ K3d cluster deployment
-          - ✅ Hauler registry services
-          - ✅ Hauler fileserver services
-          - ✅ K3s registry configuration
-          - ✅ Helm installation from local source
-          - ✅ ESS Helm chart deployment
-          - ✅ Network isolation monitoring
-          
-          ## Pod Status
-          
-          REPORT
-          
-          kubectl get pods -n ess >> /tmp/airgap-report.md || true
-          
-          cat >> /tmp/airgap-report.md << 'REPORT'
-          
-          ## Image Verification
-          
-          REPORT
-          
-          kubectl get pods -n ess -o json | \
-            jq -r '.items[].spec.containers[] | "- \(.image)"' >> /tmp/airgap-report.md || true
-          
-          cat >> /tmp/airgap-report.md << 'REPORT'
-          
-          ## Network Activity
-          
-          REPORT
-          
-          if [ -f /tmp/network-activity.log ]; then
-            echo "External connections detected: $(grep -c ESTABLISHED /tmp/network-activity.log || echo 0)" >> /tmp/airgap-report.md
-          fi
-          
-          cat >> /tmp/airgap-report.md << 'REPORT'
-          
-          ## Recommendations
-          
-          Based on this test, the following improvements are recommended:
-          
-          1. Review any external network connections detected
-          2. Ensure all container images are available in local registry
-          3. Verify all binary files are available via fileserver
-          4. Test OS package repository completeness
-          
-          REPORT
-          
-          cat /tmp/airgap-report.md
-          echo "::endgroup::"
-
-      - name: Post Report to PR
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const report = fs.readFileSync('/tmp/airgap-report.md', 'utf8');
-            
-            // Create the comment body with collapsible sections for better readability
-            const commentBody = `## 🧪 Airgap Test Results
-            
-            <details open>
-            <summary><strong>Click to expand/collapse full report</strong></summary>
-            
-            ${report}
-            
-            </details>
-            
-            ---
-            
-            **Workflow Run**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            **Commit**: ${{ github.event.pull_request.head.sha }}
-            `;
-            
-            // Try to find existing comment
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            
-            const botComment = comments.find(comment => 
-              comment.user.type === 'Bot' && 
-              comment.body.includes('🧪 Airgap Test Results')
-            );
-            
-            // Update existing comment or create new one
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: commentBody
-              });
-              console.log('Updated existing PR comment');
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: commentBody
-              });
-              console.log('Created new PR comment');
-            }
-
-      - name: Upload Test Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: airgap-test-results
-          path: |
-            /tmp/airgap-report.md
-            /tmp/network-activity.log
-            /tmp/*-registry.log
-            /tmp/fileserver.log
-            /tmp/helm-fileserver.log
-          retention-days: 30
-
-      - name: Collect Logs on Failure
-        if: failure()
-        run: |
-          echo "::group::Debug Information"
-          
-          # Check if k3d cluster exists before running kubectl
-          if k3d cluster list 2>/dev/null | grep -q "airgap-test"; then
-            echo "=== K3d Cluster Info ==="
-            kubectl cluster-info dump || echo "Failed to get cluster info"
-            
-            echo "=== ESS Namespace Events ==="
-            kubectl get events -n ess --sort-by='.lastTimestamp' || echo "Failed to get events"
-            
-            echo "=== Pod Descriptions ==="
-            kubectl describe pods -n ess || echo "Failed to describe pods"
-          else
-            echo "⚠️  K3d cluster 'airgap-test' does not exist or was already deleted"
-          fi
-          
-          echo "=== Hauler Registry Logs ==="
-          if [ -f /tmp/k3s-registry.log ]; then
-            cat /tmp/k3s-registry.log
-          else
-            echo "No K3s registry log found at /tmp/k3s-registry.log"
-          fi
-          
-          if [ -f /tmp/ess-registry.log ]; then
-            cat /tmp/ess-registry.log
-          else
-            echo "No ESS registry log found at /tmp/ess-registry.log"
-          fi
-          
-          echo "=== Hauler Fileserver Logs ==="
-          if [ -f /tmp/fileserver.log ]; then
-            cat /tmp/fileserver.log
-          else
-            echo "No fileserver log found at /tmp/fileserver.log"
-          fi
-          
-          if [ -f /tmp/helm-fileserver.log ]; then
-            cat /tmp/helm-fileserver.log
-          else
-            echo "No Helm fileserver log found at /tmp/helm-fileserver.log"
-          fi
-          
-          echo "=== Network Monitor Log ==="
-          if [ -f /tmp/network-activity.log ]; then
-            cat /tmp/network-activity.log
-          else
-            echo "No network activity log found at /tmp/network-activity.log"
-          fi
-          
-          echo "::endgroup::"
-
-      - name: Cleanup
-        if: always()
-        run: |
-          echo "::group::Cleanup"
-          # Stop hauler services
-          for pid in /tmp/*-registry.pid /tmp/fileserver.pid /tmp/helm-fileserver.pid /tmp/monitor.pid; do
-            if [ -f "$pid" ]; then
-              kill $(cat "$pid") 2>/dev/null || true
-            fi
-          done
-          
-          # Delete k3d cluster
-          k3d cluster delete airgap-test || true
-          
-          echo "Cleanup completed"
-          echo "::endgroup::"
+            "matrix-authen
