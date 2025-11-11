@@ -345,7 +345,8 @@ jobs:
         run: |
           echo "::group::Installing Helm"
           # Download Helm from local fileserver
-          curl -sfL http://localhost:8081/helm-${HELM_VERSION}-linux-amd64.tar.gz -o /tmp/helm.tar.gz
+          # Note: The Helm manifest saves the file as helm-linux-amd64.tar.gz (without version)
+          curl -sfL http://localhost:8081/helm-linux-amd64.tar.gz -o /tmp/helm.tar.gz
           tar -xzf /tmp/helm.tar.gz -C /tmp
           sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
           sudo chmod +x /usr/local/bin/helm
