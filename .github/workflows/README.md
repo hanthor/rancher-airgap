@@ -6,6 +6,8 @@ This workflow automates the creation of airgapped image stores and OS dependenci
 - **[Quick Start Guide](QUICKSTART.md)** - Get started in 5 minutes ⭐
 - **[Architecture Overview](ARCHITECTURE.md)** - Visual workflow diagrams
 - **[Secrets Configuration](SECRETS.md)** - Configure Cloudflare R2 uploads
+- **[Airgap Testing](README-AIRGAP-TESTING.md)** - Automated airgap validation workflow 🧪
+- **[Testing Quick Reference](AIRGAP-TESTING-QUICKREF.md)** - Quick commands and troubleshooting
 - **This Document** - Detailed workflow reference
 
 ## Trigger Methods
