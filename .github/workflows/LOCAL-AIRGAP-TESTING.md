@@ -2,6 +2,8 @@
 
 This guide explains how to run airgap tests locally using the `local-airgap-test.sh` script. This script mirrors the GitHub Actions workflow but uses real K3s instead of K3d for production-like testing and faster iteration during development.
 
+**📖 Quick Reference:** [Local Testing Quick Reference](LOCAL-AIRGAP-TESTING-QUICKREF.md) - Common commands and troubleshooting
+
 ## Overview
 
 The local airgap test script provides:

@@ -1,10 +1,26 @@
 # Testing Airgapped K3s + ESS Deployments
 
-This guide demonstrates how to test and validate airgapped K3s + ESS deployments using the automated testing workflow.
+This guide demonstrates how to test and validate airgapped K3s + ESS deployments using both automated CI testing and local testing workflows.
 
-## Quick Start
+## Testing Options
 
-### 1. Run the Automated Test
+### Local Testing (Recommended for Development)
+
+For fast iteration and local development:
+
+```bash
+# Run complete local test with K3s
+sudo .github/workflows/scripts/local-airgap-test.sh
+
+# Cleanup after testing
+sudo .github/workflows/scripts/local-airgap-test.sh cleanup
+```
+
+**📖 Documentation:** [Local Airgap Testing Guide](../.github/workflows/LOCAL-AIRGAP-TESTING.md)
+
+### CI Testing (GitHub Actions)
+
+For automated PR validation and release testing:
 
 ```bash
 # Via GitHub CLI
@@ -12,6 +28,22 @@ gh workflow run test-airgap.yaml
 
 # Via GitHub UI
 # Navigate to: Actions → Test Airgap K3s/ESS Deployment → Run workflow
+```
+
+**📖 Documentation:** [CI Airgap Testing Guide](../.github/workflows/README-AIRGAP-TESTING.md)
+
+## Quick Start
+
+### 1. Run the Test
+
+**Local (faster iteration):**
+```bash
+sudo .github/workflows/scripts/local-airgap-test.sh
+```
+
+**CI (automated validation):**
+```bash
+gh workflow run test-airgap.yaml
 ```
 
 ### 2. Monitor Progress
