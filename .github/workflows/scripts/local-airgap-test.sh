@@ -227,29 +227,69 @@ EOF
   print_step "Downloading K3s from local fileserver..."
   cd "$REPO_ROOT/hauler/k3s" || exit 1
   
-  # Start temporary fileserver to get K3s binary
+  # Start temporary fileserver to get K3s binary (use an isolated writable directory)
   print_step "Starting temporary fileserver for K3s installation..."
-  nohup hauler store serve fileserver --port $K3S_FILESERVER_PORT --store k3s-store > "$LOG_DIR/temp-fileserver.log" 2>&1 &
+  mkdir -p "$WORK_DIR/k3s-fileserver"
+  nohup hauler store serve fileserver --port $K3S_FILESERVER_PORT --store k3s-store --directory "$WORK_DIR/k3s-fileserver" > "$LOG_DIR/temp-fileserver.log" 2>&1 &
   local temp_fileserver_pid=$!
-  sleep 5
   
-  # Download K3s binary
-  print_step "Downloading K3s binary..."
-  if ! curl -sfL "http://localhost:$K3S_FILESERVER_PORT/k3s" -o /usr/local/bin/k3s; then
-    print_error "Failed to download K3s binary from fileserver"
-    kill $temp_fileserver_pid || true
+  # Wait for fileserver to be reachable
+  local retries=0
+  while [ $retries -lt 15 ]; do
+    if curl -sSf "http://localhost:$K3S_FILESERVER_PORT/" > /dev/null 2>&1; then
+      break
+    fi
+    retries=$((retries + 1))
+    sleep 1
+  done
+  
+  if [ $retries -eq 15 ]; then
+    print_error "Temporary K3s fileserver failed to start"
+    print_step "Temp fileserver log (last 50 lines):"
+    tail -n 50 "$LOG_DIR/temp-fileserver.log" || true
+    kill $temp_fileserver_pid 2>/dev/null || true
     exit 1
   fi
-  chmod +x /usr/local/bin/k3s
   
-  # Download K3s install script
+  # Determine correct K3s binary name by arch
+  local K3S_SRC_BIN="k3s"
+  if [ "$ARCH" = "arm64" ]; then
+    K3S_SRC_BIN="k3s-arm64"
+  fi
+  
+  # Download K3s binary with fallback to repo files if fileserver path differs
+  print_step "Downloading K3s binary ($K3S_SRC_BIN)..."
+  if curl -sfL "http://localhost:$K3S_FILESERVER_PORT/$K3S_SRC_BIN" -o /usr/local/bin/k3s; then
+    chmod +x /usr/local/bin/k3s
+  else
+    print_warning "Failed to get $K3S_SRC_BIN from temp fileserver, trying repository fallback..."
+    if [ -f "$REPO_ROOT/hauler/k3s/fileserver/$K3S_SRC_BIN" ]; then
+      cp "$REPO_ROOT/hauler/k3s/fileserver/$K3S_SRC_BIN" /usr/local/bin/k3s
+      chmod +x /usr/local/bin/k3s
+    else
+      print_error "K3s binary not found at fileserver or repo fallback"
+      print_step "Fileserver index:"
+      curl -sf "http://localhost:$K3S_FILESERVER_PORT/" || true
+      kill $temp_fileserver_pid 2>/dev/null || true
+      exit 1
+    fi
+  fi
+  
+  # Download K3s install script with fallback
   print_step "Downloading K3s install script..."
-  if ! curl -sfL "http://localhost:$K3S_FILESERVER_PORT/install.sh" -o /tmp/k3s-install.sh; then
-    print_error "Failed to download K3s install script"
-    kill $temp_fileserver_pid || true
+  if curl -sfL "http://localhost:$K3S_FILESERVER_PORT/install.sh" -o /tmp/k3s-install.sh; then
+    chmod +x /tmp/k3s-install.sh
+  elif [ -f "$REPO_ROOT/hauler/k3s/fileserver/install.sh" ]; then
+    print_warning "Failed to get install.sh from fileserver, using repository fallback"
+    cp "$REPO_ROOT/hauler/k3s/fileserver/install.sh" /tmp/k3s-install.sh
+    chmod +x /tmp/k3s-install.sh
+  else
+    print_error "K3s install.sh not found at fileserver or repo fallback"
+    print_step "Fileserver index:"
+    curl -sf "http://localhost:$K3S_FILESERVER_PORT/" || true
+    kill $temp_fileserver_pid 2>/dev/null || true
     exit 1
   fi
-  chmod +x /tmp/k3s-install.sh
   
   # Kill temporary fileserver
   kill $temp_fileserver_pid || true
@@ -313,51 +353,93 @@ start_hauler_services() {
   # Start K3s fileserver
   print_step "Starting K3s fileserver on port $K3S_FILESERVER_PORT..."
   cd "$REPO_ROOT/hauler/k3s" || exit 1
-  nohup hauler store serve fileserver --port $K3S_FILESERVER_PORT --store k3s-store > "$LOG_DIR/k3s-fileserver.log" 2>&1 &
+  mkdir -p "$WORK_DIR/k3s-fileserver"
+  nohup hauler store serve fileserver --port $K3S_FILESERVER_PORT --store k3s-store --directory "$WORK_DIR/k3s-fileserver" > "$LOG_DIR/k3s-fileserver.log" 2>&1 &
   echo $! > "$WORK_DIR/fileserver.pid"
   
   # Start Helm fileserver
   print_step "Starting Helm fileserver on port $HELM_FILESERVER_PORT..."
   cd "$REPO_ROOT/hauler/helm" || exit 1
-  nohup hauler store serve fileserver --port $HELM_FILESERVER_PORT --store helm-store > "$LOG_DIR/helm-fileserver.log" 2>&1 &
+  mkdir -p "$WORK_DIR/helm-fileserver"
+  nohup hauler store serve fileserver --port $HELM_FILESERVER_PORT --store helm-store --directory "$WORK_DIR/helm-fileserver" > "$LOG_DIR/helm-fileserver.log" 2>&1 &
   echo $! > "$WORK_DIR/helm-fileserver.pid"
   
   # Wait for services to start
   print_step "Waiting for Hauler services to initialize..."
-  sleep 10
+  sleep 5
   
-  # Verify services
+  # Verify services with retries
   print_step "Verifying Hauler services..."
   
-  if curl -f "http://localhost:$K3S_REGISTRY_PORT/v2/_catalog" > /dev/null 2>&1; then
-    print_success "K3s registry is running"
-  else
-    print_error "K3s registry failed to start"
-    cat "$LOG_DIR/k3s-registry.log"
+  # Verify K3s registry
+  local retries=0
+  while [ $retries -lt 30 ]; do
+    if curl -f -s "http://localhost:$K3S_REGISTRY_PORT/v2/_catalog" > /dev/null 2>&1; then
+      print_success "K3s registry is running"
+      break
+    fi
+    retries=$((retries + 1))
+    sleep 1
+  done
+  
+  if [ $retries -eq 30 ]; then
+    print_error "K3s registry failed to start after 30 seconds"
+    print_step "Last 50 lines of K3s registry log:"
+    tail -n 50 "$LOG_DIR/k3s-registry.log"
     exit 1
   fi
   
-  if curl -f "http://localhost:$ESS_REGISTRY_PORT/v2/_catalog" > /dev/null 2>&1; then
-    print_success "ESS registry is running"
-  else
-    print_error "ESS registry failed to start"
-    cat "$LOG_DIR/ess-registry.log"
+  # Verify ESS registry
+  retries=0
+  while [ $retries -lt 30 ]; do
+    if curl -f -s "http://localhost:$ESS_REGISTRY_PORT/v2/_catalog" > /dev/null 2>&1; then
+      print_success "ESS registry is running"
+      break
+    fi
+    retries=$((retries + 1))
+    sleep 1
+  done
+  
+  if [ $retries -eq 30 ]; then
+    print_error "ESS registry failed to start after 30 seconds"
+    print_step "Last 50 lines of ESS registry log:"
+    tail -n 50 "$LOG_DIR/ess-registry.log"
     exit 1
   fi
   
-  if curl -f "http://localhost:$K3S_FILESERVER_PORT" > /dev/null 2>&1; then
-    print_success "K3s fileserver is running"
-  else
-    print_error "K3s fileserver failed to start"
-    cat "$LOG_DIR/k3s-fileserver.log"
+  # Verify K3s fileserver
+  retries=0
+  while [ $retries -lt 30 ]; do
+    if curl -f -s "http://localhost:$K3S_FILESERVER_PORT" > /dev/null 2>&1; then
+      print_success "K3s fileserver is running"
+      break
+    fi
+    retries=$((retries + 1))
+    sleep 1
+  done
+  
+  if [ $retries -eq 30 ]; then
+    print_error "K3s fileserver failed to start after 30 seconds"
+    print_step "Last 50 lines of K3s fileserver log:"
+    tail -n 50 "$LOG_DIR/k3s-fileserver.log"
     exit 1
   fi
   
-  if curl -f "http://localhost:$HELM_FILESERVER_PORT" > /dev/null 2>&1; then
-    print_success "Helm fileserver is running"
-  else
-    print_error "Helm fileserver failed to start"
-    cat "$LOG_DIR/helm-fileserver.log"
+  # Verify Helm fileserver
+  retries=0
+  while [ $retries -lt 30 ]; do
+    if curl -f -s "http://localhost:$HELM_FILESERVER_PORT" > /dev/null 2>&1; then
+      print_success "Helm fileserver is running"
+      break
+    fi
+    retries=$((retries + 1))
+    sleep 1
+  done
+  
+  if [ $retries -eq 30 ]; then
+    print_error "Helm fileserver failed to start after 30 seconds"
+    print_step "Last 50 lines of Helm fileserver log:"
+    tail -n 50 "$LOG_DIR/helm-fileserver.log"
     exit 1
   fi
   
@@ -418,85 +500,59 @@ deploy_ess() {
   # Create ESS values file
   print_step "Creating ESS values file..."
   cat > /tmp/ess-values.yaml <<EOF
+# Minimal values compatible with matrix-stack 25.11.0 schema
+# Only set serverName (required). Leaving component blocks at defaults.
 serverName: ${DOMAIN}
 
+# Disable ingress TLS globally for local test (no ingress resources wanted)
+ingress:
+  tlsEnabled: false
+
+# Explicitly enable core components (they default to enabled but kept for clarity)
 synapse:
-  ingress:
-    enabled: false
-    host: matrix.${DOMAIN}
-    tls:
-      secretName: ess-wildcard-tls
-
-matrixAuthenticationService:
-  ingress:
-    enabled: false
-    host: account.${DOMAIN}
-    tls:
-      secretName: ess-wildcard-tls
-
-matrixRTC:
-  ingress:
-    enabled: false
-    host: mrtc.${DOMAIN}
-    tls:
-      secretName: ess-wildcard-tls
-
-elementWeb:
-  ingress:
-    enabled: false
-    host: chat.${DOMAIN}
-    tls:
-      secretName: ess-wildcard-tls
-
-elementAdmin:
-  ingress:
-    enabled: false
-    host: admin.${DOMAIN}
-    tls:
-      secretName: ess-wildcard-tls
-
-wellKnownDelegation:
-  ingress:
-    enabled: false
-    host: ${DOMAIN}
-    tls:
-      secretName: ess-wildcard-tls
-
-# Use internal PostgreSQL for testing
-postgresql:
   enabled: true
+elementWeb:
+  enabled: true
+matrixAuthenticationService:
+  enabled: true
+matrixRTC:
+  enabled: true
+elementAdmin:
+  enabled: true
+
+# Do NOT include per-component ingress sections or deprecated postgresql key (chart manages internal DB differently)
 EOF
   
-  # Extract and install ESS chart
-  print_step "Extracting ESS chart from Hauler store..."
+  # Install ESS chart from local registry
+  print_step "Installing ESS from local Hauler registry..."
   cd "$REPO_ROOT/hauler/ess-helm" || exit 1
   
-  mkdir -p /tmp/charts
-  hauler store copy --store ess-store --content-type chart --name matrix-stack --destination /tmp/charts || {
-    print_warning "Direct chart extraction failed, trying alternative method..."
-    
-    # Try to install from OCI registry
-    print_step "Installing ESS from OCI registry..."
-    helm upgrade --install ess \
-      "oci://localhost:$ESS_REGISTRY_PORT/hauler/matrix-stack" \
-      --version "$ESS_CHART_VERSION" \
-      --namespace ess \
-      -f /tmp/ess-values.yaml \
-      --timeout 10m \
-      --insecure-skip-tls-verify \
-      --wait 2>&1 | tee "$LOG_DIR/ess-install.log"
-  }
-  
-  # If extraction succeeded, install from tarball
-  if [ -f "/tmp/charts/matrix-stack-${ESS_CHART_VERSION}.tgz" ]; then
-    print_step "Installing ESS from extracted chart..."
-    helm upgrade --install ess \
-      "/tmp/charts/matrix-stack-${ESS_CHART_VERSION}.tgz" \
-      --namespace ess \
-      -f /tmp/ess-values.yaml \
-      --timeout 10m \
-      --wait 2>&1 | tee "$LOG_DIR/ess-install.log"
-  fi
+  # Install directly from the local OCI registry using plain HTTP
+  helm upgrade --install ess \
+    "oci://localhost:$ESS_REGISTRY_PORT/hauler/matrix-stack" \
+    --version "$ESS_CHART_VERSION" \
+    --namespace ess \
+    -f /tmp/ess-values.yaml \
+    --timeout 10m \
+    --plain-http \
+    --wait 2>&1 | tee "$LOG_DIR/ess-install.log" || {
+      print_error "Failed to install ESS from registry, trying chart extraction..."
+      
+      # Fallback: Helm pull the chart from OCI then install from tgz
+      print_step "Pulling chart tarball via Helm..."
+      mkdir -p /tmp/charts
+      if helm pull "oci://localhost:$ESS_REGISTRY_PORT/hauler/matrix-stack" --version "$ESS_CHART_VERSION" --plain-http -d /tmp/charts; then
+        print_step "Installing ESS from pulled chart..."
+        helm upgrade --install ess \
+          "/tmp/charts/matrix-stack-${ESS_CHART_VERSION}.tgz" \
+          --namespace ess \
+          -f /tmp/ess-values.yaml \
+          --timeout 10m \
+          --wait 2>&1 | tee -a "$LOG_DIR/ess-install.log"
+      else
+        print_error "Helm pull of chart failed"
+      fi
+    }
   
   print_success "ESS deployment initiated"
 }
