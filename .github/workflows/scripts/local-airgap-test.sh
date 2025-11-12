@@ -15,6 +15,7 @@ NC='\033[0m' # No Color
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+CONFIG_DIR="$REPO_ROOT/.github/workflows/config"
 
 # Default configuration
 HAULER_VERSION="${HAULER_VERSION:-1.3.0}"
@@ -195,34 +196,13 @@ install_k3s() {
     sleep 5
   fi
   
-  # Configure K3s to use local registries
+  # Configure K3s to use local registries from config template
   print_step "Configuring K3s registries..."
   mkdir -p /etc/rancher/k3s
   
-  cat > /etc/rancher/k3s/registries.yaml <<EOF
-mirrors:
-  "docker.io":
-    endpoint:
-      - "http://localhost:$K3S_REGISTRY_PORT"
-      - "http://localhost:$ESS_REGISTRY_PORT"
-  "ghcr.io":
-    endpoint:
-      - "http://localhost:$ESS_REGISTRY_PORT"
-  "oci.element.io":
-    endpoint:
-      - "http://localhost:$ESS_REGISTRY_PORT"
-  "*":
-    endpoint:
-      - "http://localhost:$K3S_REGISTRY_PORT"
-      - "http://localhost:$ESS_REGISTRY_PORT"
-configs:
-  "localhost:$K3S_REGISTRY_PORT":
-    tls:
-      insecure_skip_verify: true
-  "localhost:$ESS_REGISTRY_PORT":
-    tls:
-      insecure_skip_verify: true
-EOF
+  # Use config file with port substitution
+  sed -e "s/5001/$K3S_REGISTRY_PORT/g" -e "s/5002/$ESS_REGISTRY_PORT/g" \
+    "$CONFIG_DIR/k3s-registries.yaml" > /etc/rancher/k3s/registries.yaml
   
   print_step "Downloading K3s from local fileserver..."
   cd "$REPO_ROOT/hauler/k3s" || exit 1
@@ -428,31 +408,9 @@ deploy_ess() {
     --cert=/tmp/tls.crt --key=/tmp/tls.key \
     --dry-run=client -o yaml | k3s kubectl apply -f -
   
-  # Create ESS values file
-  print_step "Creating ESS values file..."
-  cat > /tmp/ess-values.yaml <<EOF
-# Minimal values compatible with matrix-stack 25.11.0 schema
-# Only set serverName (required). Leaving component blocks at defaults.
-serverName: ${DOMAIN}
-
-# Disable ingress TLS globally for local test (no ingress resources wanted)
-ingress:
-  tlsEnabled: false
-
-# Explicitly enable core components (they default to enabled but kept for clarity)
-synapse:
-  enabled: true
-elementWeb:
-  enabled: true
-matrixAuthenticationService:
-  enabled: true
-matrixRTC:
-  enabled: true
-elementAdmin:
-  enabled: true
-
-# Do NOT include per-component ingress sections or deprecated postgresql key (chart manages internal DB differently)
-EOF
+  # Create ESS values file from config template
+  print_step "Preparing ESS values from config template..."
+  sed "s/ess\.local/${DOMAIN}/g" "$CONFIG_DIR/ess-values.yaml" > /tmp/ess-values.yaml
   
   # Install ESS chart from local registry
   print_step "Installing ESS from local Hauler registry..."

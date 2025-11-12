@@ -14,6 +14,17 @@
 *.tar.gz
 *.tar
 
+
+hauler/k3s/registry/*
+hauler/ess-helm/registry/*
+hauler/helm/registry/*
+hauler/k3s/k3s-store/
+hauler/ess-helm/ess-store/
+hauler/helm/helm-store/
+hauler/k3s/fileserver/
+hauler/ess-helm/fileserver/
+hauler/helm/fileserver/
+
 # But keep the manifests and READMEs
 !hauler/k3s/*.yaml
 !hauler/k3s/*.md

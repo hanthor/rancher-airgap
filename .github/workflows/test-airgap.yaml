@@ -393,30 +393,21 @@ jobs:
           kubectl create secret tls ess-wildcard-tls -n ess \
             --cert=/tmp/tls.crt --key=/tmp/tls.key
           
-          # Create values file
-          cat > /tmp/ess-values.yaml << EOF
-          # Minimal values compatible with matrix-stack 25.11.0 schema
-          # Only set serverName (required). Leaving component blocks at defaults.
-          serverName: ${DOMAIN}
+          # Prepare ESS values file with variable substitution from config template
+          echo "Preparing ESS Helm values from config template..."
+          sed "s/ess\.local/${DOMAIN}/g" .github/workflows/config/ess-values.yaml > /tmp/ess-values.yaml
           
-          # Disable ingress TLS globally for local test (no ingress resources wanted)
-          ingress:
-            tlsEnabled: false
-          
-          # Explicitly enable core components (they default to enabled but kept for clarity)
-          synapse:
-            enabled: true
-          elementWeb:
-            enabled: true
-          matrixAuthenticationService:
-            enabled: true
-          matrixRTC:
-            enabled: true
-          elementAdmin:
-            enabled: true
-          
-          # Do NOT include per-component ingress sections or deprecated postgresql key (chart manages internal DB differently)
-          EOF
+          # Optionally validate values against chart schema (informational only)
+          echo "Validating ESS values against Helm chart schema..."
+          if helm lint \
+            oci://localhost:5002/hauler/matrix-stack \
+            --version ${ESS_CHART_VERSION} \
+            --values /tmp/ess-values.yaml \
+            --plain-http 2>&1 | tee /tmp/helm-lint.log; then
+            echo "✅ ESS values validated successfully"
+          else
+            echo "::warning::Helm lint found issues (continuing anyway)"
+          fi
           
           # Install ESS chart from local registry
           # Note: Helm needs to be configured to use insecure registry

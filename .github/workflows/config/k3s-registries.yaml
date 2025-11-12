@@ -1,0 +1,27 @@
+# K3s Registry Configuration for Hauler Local Registries
+# This configures K3s to use local Hauler registries for airgap testing
+# Documentation: https://docs.k3s.io/installation/private-registry
+
+mirrors:
+  "docker.io":
+    endpoint:
+      - "http://localhost:5001"
+      - "http://localhost:5002"
+  "ghcr.io":
+    endpoint:
+      - "http://localhost:5002"
+  "oci.element.io":
+    endpoint:
+      - "http://localhost:5002"
+  "*":
+    endpoint:
+      - "http://localhost:5001"
+      - "http://localhost:5002"
+
+configs:
+  "localhost:5001":
+    tls:
+      insecure_skip_verify: true
+  "localhost:5002":
+    tls:
+      insecure_skip_verify: true
