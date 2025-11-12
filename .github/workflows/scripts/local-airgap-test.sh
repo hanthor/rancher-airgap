@@ -515,17 +515,19 @@ deploy_ess() {
   print_step "Preparing ESS Helm values..."
   sed "s/ess\.local/${DOMAIN}/g" "$CONFIG_DIR/ess-values.yaml" > /tmp/ess-values.yaml
   
-  # Validate ESS values against chart schema
-  print_step "Validating ESS values against Helm chart schema..."
-  if ! helm lint \
+  # Validate ESS values by rendering templates (helm lint doesn't work well with OCI)
+  print_step "Validating ESS values by rendering templates..."
+  if helm template test-release \
     "oci://localhost:$ESS_REGISTRY_PORT/hauler/matrix-stack" \
     --version "$ESS_CHART_VERSION" \
     --values /tmp/ess-values.yaml \
-    --plain-http 2>&1 | tee "$LOG_DIR/helm-lint.log"; then
-    print_warning "Helm lint found issues (see $LOG_DIR/helm-lint.log)"
-    print_step "Continuing deployment anyway..."
-  else
+    --plain-http \
+    --namespace ess > "$LOG_DIR/helm-template.yaml" 2>&1; then
     print_success "ESS values validated successfully"
+    print_step "Rendered templates saved to: $LOG_DIR/helm-template.yaml"
+  else
+    print_warning "Template rendering had warnings (see $LOG_DIR/helm-template.yaml)"
+    print_step "Continuing deployment anyway..."
   fi
   
   # Install ESS chart from local registry

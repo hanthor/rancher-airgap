@@ -2,9 +2,16 @@
 # Chart: element-hq/matrix-stack
 # Documentation: https://github.com/element-hq/ess-helm
 #
-# SECURITY WARNING: This configuration uses privileged Pod Security Standard
-# at the namespace level for K3s testing. DO NOT use in production!
-# For production, see: https://github.com/element-hq/ess-helm/blob/main/docs/security.md
+# SECURITY WARNING: This configuration uses:
+# 1. Privileged Pod Security Standard at namespace level (set by deployment script)
+# 2. Relaxed security contexts for postgres and haproxy (defined below)
+# These settings are for K3s TESTING ONLY - DO NOT use in production!
+#
+# For production:
+# - Use restricted Pod Security Admission with specific exceptions
+# - Configure AppArmor or SELinux profiles for container runtime
+# - Use external managed PostgreSQL database
+# - Review: https://github.com/element-hq/ess-helm/blob/main/docs/security.md
 
 # Server name - embedded in user IDs and room IDs (cannot change after deployment)
 # Use your actual domain in production
@@ -41,3 +48,26 @@ elementAdmin:
 # For production, use an external managed database
 postgres:
   enabled: true
+  # Relax security contexts for K3s testing (PostgreSQL needs writable /var/run/postgresql)
+  podSecurityContext:
+    runAsNonRoot: false
+    seccompProfile:
+      type: Unconfined
+  containersSecurityContext:
+    allowPrivilegeEscalation: true
+    capabilities:
+      drop: []
+    readOnlyRootFilesystem: false
+
+# HAProxy Configuration
+# Relax security contexts for K3s testing (HAProxy needs socketpair syscall for workers)
+haproxy:
+  podSecurityContext:
+    runAsNonRoot: false
+    seccompProfile:
+      type: Unconfined
+  containersSecurityContext:
+    allowPrivilegeEscalation: true
+    capabilities:
+      drop: []
+    readOnlyRootFilesystem: false
