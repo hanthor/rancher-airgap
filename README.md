@@ -68,26 +68,33 @@ Then download from [Releases](https://github.com/hanthor/rancher-airgap/releases
 
 ## Automated Airgap Testing 🧪
 
-This repository includes a comprehensive CI workflow to test airgapped deployments and ensure all assets are available locally.
+This repository includes comprehensive testing workflows for airgapped deployments to ensure all assets are available locally.
 
 **📖 Testing Documentation:**
-- [Airgap Testing Guide](.github/workflows/README-AIRGAP-TESTING.md) - Complete testing workflow documentation
+- [Airgap Testing Guide](.github/workflows/README-AIRGAP-TESTING.md) - Complete CI testing workflow documentation
+- [Local Testing Guide](.github/workflows/LOCAL-AIRGAP-TESTING.md) - Local K3s testing with fast iteration
 - [Quick Reference](.github/workflows/AIRGAP-TESTING-QUICKREF.md) - Common commands and troubleshooting
 
 **Key Features:**
-- ✅ Automated testing on K3d cluster
+- ✅ **GitHub Actions** - Automated testing on K3d cluster
+- ✅ **Local Testing** - Run airgap tests locally with real K3s
 - ✅ Network monitoring to detect external access
 - ✅ Image source verification
 - ✅ OS package repository validation
 - ✅ Iterative improvement workflow
 - ✅ **PR comments** with test results overview
 
-**Run Test:**
+**Run CI Test:**
 ```bash
 gh workflow run test-airgap.yaml
 ```
 
-The test validates that K3s and ESS can be deployed completely from local sources without internet access.
+**Run Local Test:**
+```bash
+sudo .github/workflows/scripts/local-airgap-test.sh
+```
+
+Both tests validate that K3s and ESS can be deployed completely from local sources without internet access. Use the local test for faster iteration during development.
 
 ## Hauler Installation
 
