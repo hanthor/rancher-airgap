@@ -1,0 +1,149 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base"
+  ],
+  "description": "Renovate configuration for rancher-airgap repository - tracks ess-helm, hauler, k3s, and helm versions",
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 10,
+  "timezone": "UTC",
+  "schedule": [
+    "every weekend"
+  ],
+  "packageRules": [
+    {
+      "description": "ESS Helm Chart - triggers automated image update workflow",
+      "matchDatasources": ["helm"],
+      "matchPackageNames": ["matrix-stack"],
+      "schedule": ["every weekend"],
+      "automerge": false,
+      "labels": ["ess-helm", "automated-update"],
+      "commitMessagePrefix": "chore(ess):",
+      "commitMessageTopic": "ESS Helm Chart"
+    },
+    {
+      "description": "K3s - GitHub Releases",
+      "matchDatasources": ["github-releases"],
+      "matchPackageNames": ["k3s-io/k3s"],
+      "extractVersion": "^v(?<version>\\d+\\.\\d+\\.\\d+)\\+k3s\\d+$",
+      "schedule": ["every weekend"],
+      "automerge": false,
+      "labels": ["k3s"],
+      "commitMessagePrefix": "chore(k3s):",
+      "commitMessageTopic": "K3s"
+    },
+    {
+      "description": "Helm - GitHub Releases",
+      "matchDatasources": ["github-releases"],
+      "matchPackageNames": ["helm/helm"],
+      "extractVersion": "^v(?<version>\\d+\\.\\d+\\.\\d+)$",
+      "schedule": ["every weekend"],
+      "automerge": false,
+      "labels": ["helm"],
+      "commitMessagePrefix": "chore(helm):",
+      "commitMessageTopic": "Helm"
+    },
+    {
+      "description": "Hauler - GitHub Releases",
+      "matchDatasources": ["github-releases"],
+      "matchPackageNames": ["hauler-dev/hauler"],
+      "extractVersion": "^v(?<version>\\d+\\.\\d+\\.\\d+)$",
+      "schedule": ["every weekend"],
+      "automerge": false,
+      "labels": ["hauler"],
+      "commitMessagePrefix": "chore(hauler):",
+      "commitMessageTopic": "Hauler"
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "ESS Helm Chart version in hauler manifest",
+      "customType": "regex",
+      "fileMatch": ["^hauler/ess-helm/rancher-airgap-ess-helm\\.yaml$"],
+      "matchStrings": [
+        "repoURL:\\s*oci://ghcr\\.io/element-hq/ess-helm\\s+version:\\s*(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "helm",
+      "depNameTemplate": "matrix-stack",
+      "registryUrlTemplate": "oci://ghcr.io/element-hq/ess-helm"
+    },
+    {
+      "description": "ESS Helm Chart version in hauler script",
+      "customType": "regex",
+      "fileMatch": ["^hauler/scripts/ess-helm/hauler-ess-helm\\.sh$"],
+      "matchStrings": [
+        "export vESSHelmChart=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "helm",
+      "depNameTemplate": "matrix-stack",
+      "registryUrlTemplate": "oci://ghcr.io/element-hq/ess-helm"
+    },
+    {
+      "description": "K3s version in hauler script",
+      "customType": "regex",
+      "fileMatch": ["^hauler/scripts/k3s/hauler-k3s\\.sh$"],
+      "matchStrings": [
+        "export vK3S=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "k3s-io/k3s",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)\\+k3s\\d+$"
+    },
+    {
+      "description": "K3s version in test-airgap workflow",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/test-airgap\\.yaml$"],
+      "matchStrings": [
+        "K3S_VERSION:\\s*\"v(?<currentValue>[0-9.]+)\\+k3s\\d+\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "k3s-io/k3s",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)\\+k3s\\d+$"
+    },
+    {
+      "description": "Helm version in hauler script",
+      "customType": "regex",
+      "fileMatch": ["^hauler/scripts/helm/hauler-helm\\.sh$"],
+      "matchStrings": [
+        "export vHelm=(?<currentValue>[0-9.]+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "helm/helm",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "description": "Helm version in test-airgap workflow",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/test-airgap\\.yaml$"],
+      "matchStrings": [
+        "HELM_VERSION:\\s*\"v(?<currentValue>[0-9.]+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "helm/helm",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "description": "Hauler version in test-airgap workflow",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/test-airgap\\.yaml$"],
+      "matchStrings": [
+        "HAULER_VERSION:\\s*\"(?<currentValue>[0-9.]+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "hauler-dev/hauler",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "description": "ESS Chart version in test-airgap workflow",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/test-airgap\\.yaml$"],
+      "matchStrings": [
+        "ESS_CHART_VERSION:\\s*\"(?<currentValue>[0-9.]+)\""
+      ],
+      "datasourceTemplate": "helm",
+      "depNameTemplate": "matrix-stack",
+      "registryUrlTemplate": "oci://ghcr.io/element-hq/ess-helm"
+    }
+  ]
+}
