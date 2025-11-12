@@ -13,6 +13,9 @@
 *.tar.zst
 *.tar.gz
 *.tar
+hauler/k3s/*
+hauler/ess-helm/*
+hauler/helm/*
 
 # Temporary files
 /tmp/
