@@ -346,8 +346,34 @@ jobs:
           echo "::group::Installing Helm"
           # Download Helm from local fileserver
           # Note: The Helm manifest saves the file as helm-linux-amd64.tar.gz (without version)
-          curl -sfL http://localhost:8081/helm-linux-amd64.tar.gz -o /tmp/helm.tar.gz
+          echo "Downloading Helm from fileserver..."
+          if ! curl -sfL http://localhost:8081/helm-linux-amd64.tar.gz -o /tmp/helm.tar.gz; then
+            echo "::error::Failed to download Helm from fileserver"
+            echo "Checking fileserver contents:"
+            curl -f http://localhost:8081/ || true
+            exit 1
+          fi
+          
+          # Verify download
+          if [ ! -f /tmp/helm.tar.gz ] || [ ! -s /tmp/helm.tar.gz ]; then
+            echo "::error::Downloaded Helm tarball is missing or empty"
+            ls -lh /tmp/helm.tar.gz || true
+            exit 1
+          fi
+          
+          echo "Extracting Helm tarball..."
           tar -xzf /tmp/helm.tar.gz -C /tmp
+          
+          # Verify extraction
+          if [ ! -f /tmp/linux-amd64/helm ]; then
+            echo "::error::Helm binary not found after extraction"
+            echo "Contents of /tmp after extraction:"
+            ls -lR /tmp/ | grep -A20 "helm" || true
+            echo "Tarball contents:"
+            tar -tzf /tmp/helm.tar.gz || true
+            exit 1
+          fi
+          
           sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
           sudo chmod +x /usr/local/bin/helm
           
