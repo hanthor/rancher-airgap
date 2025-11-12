@@ -13,9 +13,14 @@
 *.tar.zst
 *.tar.gz
 *.tar
-hauler/k3s/*
-hauler/ess-helm/*
-hauler/helm/*
+
+# But keep the manifests and READMEs
+!hauler/k3s/*.yaml
+!hauler/k3s/*.md
+!hauler/ess-helm/*.yaml
+!hauler/ess-helm/*.md
+!hauler/helm/*.yaml
+!hauler/helm/*.md
 
 # Temporary files
 /tmp/

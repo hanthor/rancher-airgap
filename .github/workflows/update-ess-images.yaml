@@ -1,0 +1,452 @@
+name: Update ESS Helm Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      ess_chart_version:
+        description: 'ESS Helm Chart version to process'
+        required: true
+        type: string
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'hauler/ess-helm/rancher-airgap-ess-helm.yaml'
+      - 'hauler/scripts/ess-helm/hauler-ess-helm.sh'
+
+env:
+  CLUSTER_NAME: ess-update-cluster
+  DOMAIN: ess.local
+
+jobs:
+  detect-ess-version-change:
+    name: Detect ESS Version Change
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      has_ess_change: ${{ steps.check.outputs.has_ess_change }}
+      ess_version: ${{ steps.check.outputs.ess_version }}
+      is_renovate_pr: ${{ steps.check.outputs.is_renovate_pr }}
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Check if this is a Renovate PR with ESS changes
+        id: check
+        run: |
+          # Check if PR is from Renovate and has ess-helm label
+          IS_RENOVATE="false"
+          HAS_ESS_LABEL="false"
+
+          if [[ "${{ github.event.pull_request.user.login }}" == "renovate"* ]] || \
+             [[ "${{ github.event.pull_request.user.login }}" == *"renovate-bot"* ]]; then
+            IS_RENOVATE="true"
+          fi
+
+          # Check for ess-helm label
+          LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
+          if echo "$LABELS" | grep -q "ess-helm"; then
+            HAS_ESS_LABEL="true"
+          fi
+
+          echo "is_renovate_pr=$IS_RENOVATE" >> $GITHUB_OUTPUT
+
+          if [[ "$IS_RENOVATE" == "true" ]] && [[ "$HAS_ESS_LABEL" == "true" ]]; then
+            echo "has_ess_change=true" >> $GITHUB_OUTPUT
+
+            # Extract ESS version from the manifest
+            if [ -f "hauler/ess-helm/rancher-airgap-ess-helm.yaml" ]; then
+              VERSION=$(grep -A2 "name: matrix-stack" hauler/ess-helm/rancher-airgap-ess-helm.yaml | grep "version:" | awk '{print $2}')
+              echo "ess_version=$VERSION" >> $GITHUB_OUTPUT
+              echo "Detected ESS version: $VERSION"
+            fi
+          else
+            echo "has_ess_change=false" >> $GITHUB_OUTPUT
+          fi
+
+  update-ess-images:
+    name: Update ESS Images from Deployed Chart
+    runs-on: ubuntu-latest
+    # Run if manually triggered OR if it's a Renovate PR with ESS changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (needs.detect-ess-version-change.outputs.has_ess_change == 'true' &&
+       needs.detect-ess-version-change.outputs.is_renovate_pr == 'true')
+    needs: [detect-ess-version-change]
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set ESS Version
+        id: set-version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            ESS_VERSION="${{ github.event.inputs.ess_chart_version }}"
+          else
+            ESS_VERSION="${{ needs.detect-ess-version-change.outputs.ess_version }}"
+          fi
+          echo "ESS_VERSION=$ESS_VERSION" >> $GITHUB_ENV
+          echo "ess_version=$ESS_VERSION" >> $GITHUB_OUTPUT
+          echo "Using ESS version: $ESS_VERSION"
+
+      - name: Install K3d
+        run: |
+          curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+          k3d version
+
+      - name: Install Hauler
+        run: |
+          curl -sfL https://get.hauler.dev | bash
+          hauler version
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm version
+
+      # Build Hauler stores for K3s, Helm, and ESS
+      - name: Build Hauler Stores
+        run: |
+          echo "::group::Building K3s Store"
+          cd hauler/k3s
+          hauler store sync --store k3s-store --platform linux/amd64 --filename rancher-airgap-k3s.yaml
+          cd ../..
+          echo "::endgroup::"
+
+          echo "::group::Building Helm Store"
+          cd hauler/helm
+          hauler store sync --store helm-store --filename rancher-airgap-helm.yaml
+          cd ../..
+          echo "::endgroup::"
+
+          echo "::group::Building ESS Store"
+          cd hauler/ess-helm
+          hauler store sync --store ess-store --platform linux/amd64 --filename rancher-airgap-ess-helm.yaml
+          cd ../..
+          echo "::endgroup::"
+
+      # Start Hauler registries
+      - name: Start Hauler Registries
+        run: |
+          cd hauler/k3s
+          nohup hauler store serve registry --store k3s-store --port 5001 > /tmp/k3s-registry.log 2>&1 &
+          cd ../..
+
+          cd hauler/ess-helm
+          nohup hauler store serve registry --store ess-store --port 5002 > /tmp/ess-registry.log 2>&1 &
+          cd ../..
+
+          # Wait for registries to be ready
+          timeout 60 bash -c 'until curl -sf http://localhost:5001/v2/ > /dev/null; do sleep 2; done' || \
+            (echo "K3s registry failed to start" && cat /tmp/k3s-registry.log && exit 1)
+          timeout 60 bash -c 'until curl -sf http://localhost:5002/v2/ > /dev/null; do sleep 2; done' || \
+            (echo "ESS registry failed to start" && cat /tmp/ess-registry.log && exit 1)
+
+          echo "Hauler registries started successfully"
+
+      # Create K3d cluster with registry mirrors
+      - name: Create K3d Cluster
+        run: |
+          cat > /tmp/k3d-config.yaml << EOF
+          apiVersion: k3d.io/v1alpha5
+          kind: Simple
+          metadata:
+            name: ${CLUSTER_NAME}
+          servers: 1
+          agents: 0
+          image: rancher/k3s:v1.33.5-k3s1
+          registries:
+            config: |
+              mirrors:
+                "docker.io":
+                  endpoint:
+                    - "http://host.k3d.internal:5001"
+                    - "http://host.k3d.internal:5002"
+                "ghcr.io":
+                  endpoint:
+                    - "http://host.k3d.internal:5002"
+                "oci.element.io":
+                  endpoint:
+                    - "http://host.k3d.internal:5002"
+                "*":
+                  endpoint:
+                    - "http://host.k3d.internal:5001"
+                    - "http://host.k3d.internal:5002"
+              configs:
+                "host.k3d.internal:5001":
+                  tls:
+                    insecure_skip_verify: true
+                "host.k3d.internal:5002":
+                  tls:
+                    insecure_skip_verify: true
+          EOF
+
+          k3d cluster create --config /tmp/k3d-config.yaml --wait
+          kubectl cluster-info
+          kubectl get nodes
+
+      # Deploy ESS to extract actual image versions
+      - name: Deploy ESS Helm Chart
+        run: |
+          echo "::group::Deploying ESS Chart"
+          kubectl create namespace ess
+
+          # Create TLS secret
+          openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout /tmp/tls.key -out /tmp/tls.crt \
+            -subj "/CN=*.${DOMAIN}" \
+            -addext "subjectAltName=DNS:${DOMAIN},DNS:*.${DOMAIN}"
+
+          kubectl create secret tls ess-wildcard-tls -n ess \
+            --cert=/tmp/tls.crt --key=/tmp/tls.key
+
+          # Create minimal values file for deployment
+          cat > /tmp/ess-values.yaml << EOF
+          serverName: ${DOMAIN}
+
+          synapse:
+            ingress:
+              enabled: false
+
+          matrixAuthenticationService:
+            ingress:
+              enabled: false
+
+          matrixRTC:
+            ingress:
+              enabled: false
+
+          elementWeb:
+            ingress:
+              enabled: false
+
+          elementAdmin:
+            ingress:
+              enabled: false
+
+          wellKnownDelegation:
+            ingress:
+              enabled: false
+          EOF
+
+          # Deploy using the specified ESS version
+          helm install ess oci://ghcr.io/element-hq/ess-helm/matrix-stack \
+            --version ${ESS_VERSION} \
+            --namespace ess \
+            --values /tmp/ess-values.yaml \
+            --wait --timeout 15m
+
+          echo "::endgroup::"
+
+      # Extract image versions from deployed resources
+      - name: Extract Image Versions from Deployment
+        id: extract
+        run: |
+          echo "::group::Extracting Image Versions"
+
+          # Wait for all pods to be created
+          sleep 30
+
+          # Extract all unique images from the ess namespace
+          kubectl get pods -n ess -o jsonpath='{.items[*].spec.containers[*].image}' | tr ' ' '\n' | sort -u > /tmp/images.txt
+          kubectl get pods -n ess -o jsonpath='{.items[*].spec.initContainers[*].image}' | tr ' ' '\n' | sort -u >> /tmp/images.txt
+
+          # Also check deployments and statefulsets
+          kubectl get deployments,statefulsets -n ess -o jsonpath='{.items[*].spec.template.spec.containers[*].image}' | tr ' ' '\n' | sort -u >> /tmp/images.txt
+          kubectl get deployments,statefulsets -n ess -o jsonpath='{.items[*].spec.template.spec.initContainers[*].image}' | tr ' ' '\n' | sort -u >> /tmp/images.txt
+
+          # Deduplicate
+          sort -u /tmp/images.txt > /tmp/images-unique.txt
+
+          echo "Extracted images:"
+          cat /tmp/images-unique.txt
+
+          # Extract specific component versions
+          export vSynapse=$(grep "synapse:" /tmp/images-unique.txt | sed 's/.*synapse:v\?\(.*\)/\1/')
+          export vElementWeb=$(grep "element-web:" /tmp/images-unique.txt | sed 's/.*element-web:v\?\(.*\)/\1/')
+          export vElementAdmin=$(grep "element-admin:" /tmp/images-unique.txt | sed 's/.*element-admin:\(.*\)/\1/')
+          export vMAS=$(grep "matrix-authentication-service:" /tmp/images-unique.txt | sed 's/.*matrix-authentication-service:\(.*\)/\1/')
+          export vLKJWT=$(grep "lk-jwt-service:" /tmp/images-unique.txt | sed 's/.*lk-jwt-service:\(.*\)/\1/')
+          export vLiveKit=$(grep "livekit-server:" /tmp/images-unique.txt | sed 's/.*livekit-server:v\?\(.*\)/\1/')
+          export vPostgres=$(grep "postgres:" /tmp/images-unique.txt | sed 's/.*postgres:\(.*\)-alpine/\1/')
+          export vHAProxy=$(grep "haproxy:" /tmp/images-unique.txt | sed 's/.*haproxy:\(.*\)-alpine/\1/')
+          export vRedis=$(grep "redis:" /tmp/images-unique.txt | sed 's/.*redis:\(.*\)-alpine/\1/')
+          export vMatrixTools=$(grep "matrix-tools:" /tmp/images-unique.txt | sed 's/.*matrix-tools:\(.*\)/\1/')
+
+          echo "Extracted versions:"
+          echo "  Synapse: v${vSynapse}"
+          echo "  Element Web: v${vElementWeb}"
+          echo "  Element Admin: ${vElementAdmin}"
+          echo "  MAS: ${vMAS}"
+          echo "  LiveKit JWT: ${vLKJWT}"
+          echo "  LiveKit: v${vLiveKit}"
+          echo "  PostgreSQL: ${vPostgres}"
+          echo "  HAProxy: ${vHAProxy}"
+          echo "  Redis: ${vRedis}"
+          echo "  Matrix Tools: ${vMatrixTools}"
+
+          # Save for next step
+          echo "vSynapse=${vSynapse}" >> $GITHUB_ENV
+          echo "vElementWeb=${vElementWeb}" >> $GITHUB_ENV
+          echo "vElementAdmin=${vElementAdmin}" >> $GITHUB_ENV
+          echo "vMAS=${vMAS}" >> $GITHUB_ENV
+          echo "vLKJWT=${vLKJWT}" >> $GITHUB_ENV
+          echo "vLiveKit=${vLiveKit}" >> $GITHUB_ENV
+          echo "vPostgres=${vPostgres}" >> $GITHUB_ENV
+          echo "vHAProxy=${vHAProxy}" >> $GITHUB_ENV
+          echo "vRedis=${vRedis}" >> $GITHUB_ENV
+          echo "vMatrixTools=${vMatrixTools}" >> $GITHUB_ENV
+
+          echo "::endgroup::"
+
+      # Update the hauler manifest with extracted versions
+      - name: Update Hauler Manifest
+        run: |
+          echo "::group::Updating Hauler Manifest"
+
+          # Create updated manifest
+          cat > hauler/ess-helm/rancher-airgap-ess-helm.yaml << EOF
+          apiVersion: content.hauler.cattle.io/v1
+          kind: Charts
+          metadata:
+            name: rancher-airgap-charts-ess
+          spec:
+            charts:
+              - name: matrix-stack
+                repoURL: oci://ghcr.io/element-hq/ess-helm
+                version: ${ESS_VERSION}
+          ---
+          apiVersion: content.hauler.cattle.io/v1
+          kind: Images
+          metadata:
+            name: rancher-airgap-images-ess-core
+          spec:
+            images:
+              # Synapse (Matrix Homeserver)
+              - name: ghcr.io/element-hq/synapse:v${vSynapse}
+              # Element Web (Matrix Client)
+              - name: ghcr.io/element-hq/element-web:v${vElementWeb}
+              # Element Admin
+              - name: oci.element.io/element-admin:${vElementAdmin}
+              # Matrix Authentication Service
+              - name: ghcr.io/element-hq/matrix-authentication-service:${vMAS}
+              # Matrix RTC Backend (LiveKit JWT Service)
+              - name: ghcr.io/element-hq/lk-jwt-service:${vLKJWT}
+              # LiveKit Server (for Matrix RTC)
+              - name: docker.io/livekit/livekit-server:v${vLiveKit}
+              # PostgreSQL
+              - name: docker.io/library/postgres:${vPostgres}-alpine
+              # HAProxy
+              - name: docker.io/library/haproxy:${vHAProxy}-alpine
+              # Redis (for Synapse)
+              - name: docker.io/library/redis:${vRedis}-alpine
+              # Matrix Tools (used for init jobs and utilities)
+              - name: ghcr.io/element-hq/ess-helm/matrix-tools:${vMatrixTools}
+          EOF
+
+          echo "Updated manifest:"
+          cat hauler/ess-helm/rancher-airgap-ess-helm.yaml
+
+          echo "::endgroup::"
+
+      # Update the generator script as well
+      - name: Update Generator Script
+        run: |
+          echo "::group::Updating Generator Script"
+
+          # Update the version in the script
+          sed -i "s/^export vESSHelmChart=.*/export vESSHelmChart=${ESS_VERSION}/" \
+            hauler/scripts/ess-helm/hauler-ess-helm.sh
+
+          echo "Updated script version to ${ESS_VERSION}"
+          echo "::endgroup::"
+
+      # Commit and push changes if running on PR
+      - name: Commit Updated Manifest
+        if: github.event_name == 'pull_request'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          git add hauler/ess-helm/rancher-airgap-ess-helm.yaml
+          git add hauler/scripts/ess-helm/hauler-ess-helm.sh
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore(ess): update image versions for ESS Helm Chart ${ESS_VERSION}
+
+          Auto-generated by update-ess-images workflow from deployed chart.
+
+          Image versions extracted from live deployment:
+          - Synapse: v${vSynapse}
+          - Element Web: v${vElementWeb}
+          - Element Admin: ${vElementAdmin}
+          - MAS: ${vMAS}
+          - LiveKit JWT: ${vLKJWT}
+          - LiveKit: v${vLiveKit}
+          - PostgreSQL: ${vPostgres}
+          - HAProxy: ${vHAProxy}
+          - Redis: ${vRedis}
+          - Matrix Tools: ${vMatrixTools}"
+
+            git push
+            echo "Changes committed and pushed"
+          fi
+
+      # Add comment to PR with extracted versions
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = process.env.ESS_VERSION;
+            const body = `## 🤖 ESS Image Versions Updated
+
+            Successfully deployed ESS Helm Chart \`${version}\` and extracted image versions.
+
+            ### Extracted Component Versions:
+            - **Synapse**: \`v${process.env.vSynapse}\`
+            - **Element Web**: \`v${process.env.vElementWeb}\`
+            - **Element Admin**: \`${process.env.vElementAdmin}\`
+            - **Matrix Authentication Service**: \`${process.env.vMAS}\`
+            - **LiveKit JWT Service**: \`${process.env.vLKJWT}\`
+            - **LiveKit Server**: \`v${process.env.vLiveKit}\`
+            - **PostgreSQL**: \`${process.env.vPostgres}-alpine\`
+            - **HAProxy**: \`${process.env.vHAProxy}-alpine\`
+            - **Redis**: \`${process.env.vRedis}-alpine\`
+            - **Matrix Tools**: \`${process.env.vMatrixTools}\`
+
+            The \`hauler/ess-helm/rancher-airgap-ess-helm.yaml\` manifest has been updated with these versions.
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Cleanup
+        if: always()
+        run: |
+          k3d cluster delete ${CLUSTER_NAME} || true
+          pkill -f "hauler store serve" || true

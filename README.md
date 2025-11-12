@@ -96,6 +96,33 @@ sudo .github/workflows/scripts/local-airgap-test.sh
 
 Both tests validate that K3s and ESS can be deployed completely from local sources without internet access. Use the local test for faster iteration during development.
 
+## Automated Dependency Updates 🔄
+
+This repository uses **Renovate** to automatically track and update component versions:
+
+- **ESS Helm Chart** - Automatically detects new releases and updates image versions
+- **K3s** - Tracks new Kubernetes versions
+- **Helm** - Monitors Helm binary releases
+- **Hauler** - Watches for new Hauler versions
+
+**📖 Documentation:**
+- [Renovate Setup Guide](.github/workflows/RENOVATE.md) - Complete automation documentation
+
+**Key Features:**
+- ✅ **Automatic PRs** - Renovate creates PRs for new versions every weekend
+- ✅ **Smart ESS Updates** - When ESS Helm Chart bumps, automatically:
+  - Deploys the new version to a K3d cluster
+  - Extracts actual image versions from the deployment
+  - Updates the Hauler manifest with correct images
+  - Commits changes back to the PR
+- ✅ **Version Sync** - Updates versions across multiple files consistently
+
+**View Renovate Status:**
+```bash
+# Check for pending dependency updates
+gh pr list --label dependencies
+```
+
 ## Hauler Installation
 
 ```bash
