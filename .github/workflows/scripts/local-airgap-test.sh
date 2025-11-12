@@ -221,7 +221,7 @@ install_k3s() {
     sleep 5
   fi
   
-  # Configure K3s to use local registries
+  # Configure K3s to use local registries from config template
   print_step "Configuring K3s registries..."
   mkdir -p /etc/rancher/k3s
   
@@ -341,114 +341,45 @@ install_k3s() {
 start_hauler_services() {
   print_header "PHASE 3: Starting Hauler Registry and Fileserver"
   
+  # Source shared functions
+  source "$SCRIPT_DIR/hauler-functions.sh"
+  
   # Stop any existing Hauler services
-  pkill -f "hauler store serve" || true
-  sleep 2
+  stop_hauler_services
   
   # Start K3s registry
-  print_step "Starting K3s registry on port $K3S_REGISTRY_PORT..."
-  cd "$REPO_ROOT/hauler/k3s" || exit 1
-  nohup hauler store serve registry --port $K3S_REGISTRY_PORT --store k3s-store > "$LOG_DIR/k3s-registry.log" 2>&1 &
-  echo $! > "$WORK_DIR/k3s-registry.pid"
+  start_hauler_registry \
+    "$K3S_REGISTRY_PORT" \
+    "k3s-store" \
+    "$REPO_ROOT/hauler/k3s" \
+    "$LOG_DIR/k3s-registry.log" \
+    "$WORK_DIR/k3s-registry.pid" || exit 1
   
   # Start ESS registry
-  print_step "Starting ESS registry on port $ESS_REGISTRY_PORT..."
-  cd "$REPO_ROOT/hauler/ess-helm" || exit 1
-  nohup hauler store serve registry --port $ESS_REGISTRY_PORT --store ess-store > "$LOG_DIR/ess-registry.log" 2>&1 &
-  echo $! > "$WORK_DIR/ess-registry.pid"
+  start_hauler_registry \
+    "$ESS_REGISTRY_PORT" \
+    "ess-store" \
+    "$REPO_ROOT/hauler/ess-helm" \
+    "$LOG_DIR/ess-registry.log" \
+    "$WORK_DIR/ess-registry.pid" || exit 1
   
   # Start K3s fileserver
-  print_step "Starting K3s fileserver on port $K3S_FILESERVER_PORT..."
-  cd "$REPO_ROOT/hauler/k3s" || exit 1
-  mkdir -p "$WORK_DIR/k3s-fileserver"
-  nohup hauler store serve fileserver --port $K3S_FILESERVER_PORT --store k3s-store --directory "$WORK_DIR/k3s-fileserver" > "$LOG_DIR/k3s-fileserver.log" 2>&1 &
-  echo $! > "$WORK_DIR/fileserver.pid"
+  start_hauler_fileserver \
+    "$K3S_FILESERVER_PORT" \
+    "k3s-store" \
+    "$REPO_ROOT/hauler/k3s" \
+    "$LOG_DIR/k3s-fileserver.log" \
+    "$WORK_DIR/fileserver.pid" \
+    "$WORK_DIR/k3s-fileserver" || exit 1
   
   # Start Helm fileserver
-  print_step "Starting Helm fileserver on port $HELM_FILESERVER_PORT..."
-  cd "$REPO_ROOT/hauler/helm" || exit 1
-  mkdir -p "$WORK_DIR/helm-fileserver"
-  nohup hauler store serve fileserver --port $HELM_FILESERVER_PORT --store helm-store --directory "$WORK_DIR/helm-fileserver" > "$LOG_DIR/helm-fileserver.log" 2>&1 &
-  echo $! > "$WORK_DIR/helm-fileserver.pid"
-  
-  # Wait for services to start
-  print_step "Waiting for Hauler services to initialize..."
-  sleep 5
-  
-  # Verify services with retries
-  print_step "Verifying Hauler services..."
-  
-  # Verify K3s registry
-  local retries=0
-  while [ $retries -lt 30 ]; do
-    if curl -f -s "http://localhost:$K3S_REGISTRY_PORT/v2/_catalog" > /dev/null 2>&1; then
-      print_success "K3s registry is running"
-      break
-    fi
-    retries=$((retries + 1))
-    sleep 1
-  done
-  
-  if [ $retries -eq 30 ]; then
-    print_error "K3s registry failed to start after 30 seconds"
-    print_step "Last 50 lines of K3s registry log:"
-    tail -n 50 "$LOG_DIR/k3s-registry.log"
-    exit 1
-  fi
-  
-  # Verify ESS registry
-  retries=0
-  while [ $retries -lt 30 ]; do
-    if curl -f -s "http://localhost:$ESS_REGISTRY_PORT/v2/_catalog" > /dev/null 2>&1; then
-      print_success "ESS registry is running"
-      break
-    fi
-    retries=$((retries + 1))
-    sleep 1
-  done
-  
-  if [ $retries -eq 30 ]; then
-    print_error "ESS registry failed to start after 30 seconds"
-    print_step "Last 50 lines of ESS registry log:"
-    tail -n 50 "$LOG_DIR/ess-registry.log"
-    exit 1
-  fi
-  
-  # Verify K3s fileserver
-  retries=0
-  while [ $retries -lt 30 ]; do
-    if curl -f -s "http://localhost:$K3S_FILESERVER_PORT" > /dev/null 2>&1; then
-      print_success "K3s fileserver is running"
-      break
-    fi
-    retries=$((retries + 1))
-    sleep 1
-  done
-  
-  if [ $retries -eq 30 ]; then
-    print_error "K3s fileserver failed to start after 30 seconds"
-    print_step "Last 50 lines of K3s fileserver log:"
-    tail -n 50 "$LOG_DIR/k3s-fileserver.log"
-    exit 1
-  fi
-  
-  # Verify Helm fileserver
-  retries=0
-  while [ $retries -lt 30 ]; do
-    if curl -f -s "http://localhost:$HELM_FILESERVER_PORT" > /dev/null 2>&1; then
-      print_success "Helm fileserver is running"
-      break
-    fi
-    retries=$((retries + 1))
-    sleep 1
-  done
-  
-  if [ $retries -eq 30 ]; then
-    print_error "Helm fileserver failed to start after 30 seconds"
-    print_step "Last 50 lines of Helm fileserver log:"
-    tail -n 50 "$LOG_DIR/helm-fileserver.log"
-    exit 1
-  fi
+  start_hauler_fileserver \
+    "$HELM_FILESERVER_PORT" \
+    "helm-store" \
+    "$REPO_ROOT/hauler/helm" \
+    "$LOG_DIR/helm-fileserver.log" \
+    "$WORK_DIR/helm-fileserver.pid" \
+    "$WORK_DIR/helm-fileserver" || exit 1
   
   # Restart K3s to pick up registry configuration
   print_step "Restarting K3s to apply registry configuration..."
@@ -679,6 +610,9 @@ cleanup() {
     return
   fi
   
+  # Source shared functions for cleanup
+  source "$SCRIPT_DIR/hauler-functions.sh" 2>/dev/null || true
+  
   print_step "Stopping Hauler services..."
   if [ -f "$WORK_DIR/k3s-registry.pid" ]; then
     kill "$(cat "$WORK_DIR/k3s-registry.pid")" 2>/dev/null || true
@@ -693,7 +627,13 @@ cleanup() {
     kill "$(cat "$WORK_DIR/helm-fileserver.pid")" 2>/dev/null || true
   fi
   
-  pkill -f "hauler store serve" || true
+  # Use shared function if available
+  if type stop_hauler_services &>/dev/null; then
+    stop_hauler_services
+  else
+    pkill -f "hauler store serve" || true
+    sleep 2
+  fi
   
   print_step "Uninstalling K3s..."
   if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
