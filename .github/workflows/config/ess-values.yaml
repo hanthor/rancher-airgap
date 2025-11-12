@@ -1,0 +1,43 @@
+# ESS Helm Chart Values for Airgap Testing
+# Chart: element-hq/matrix-stack
+# Documentation: https://github.com/element-hq/ess-helm
+#
+# SECURITY WARNING: This configuration uses privileged Pod Security Standard
+# at the namespace level for K3s testing. DO NOT use in production!
+# For production, see: https://github.com/element-hq/ess-helm/blob/main/docs/security.md
+
+# Server name - embedded in user IDs and room IDs (cannot change after deployment)
+# Use your actual domain in production
+serverName: ess.local
+
+# Global ingress TLS configuration
+ingress:
+  tlsSecret: ess-wildcard-tls
+  tlsEnabled: true
+
+# Component-specific ingress hosts (all required when components are enabled)
+synapse:
+  ingress:
+    host: matrix.ess.local
+
+matrixAuthenticationService:
+  ingress:
+    host: account.ess.local
+
+matrixRTC:
+  ingress:
+    host: mrtc.ess.local
+
+elementWeb:
+  ingress:
+    host: chat.ess.local
+
+elementAdmin:
+  ingress:
+    host: admin.ess.local
+
+# PostgreSQL Configuration
+# WARNING: Internal PostgreSQL is for testing only
+# For production, use an external managed database
+postgres:
+  enabled: true

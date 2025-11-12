@@ -2,6 +2,10 @@
 # Local Airgap Test Script for K3s + ESS Deployment
 # This script mirrors the GitHub Actions airgap test workflow but uses K3s instead of K3d
 # for faster iteration and production-like testing on local systems
+#
+# SECURITY NOTE: This script uses "privileged" Pod Security Standard for the ESS namespace
+# to avoid security context issues during testing (socketpair syscalls, writable dirs).
+# In production, use proper Pod Security Admission policies, AppArmor, or SELinux profiles.
 
 set -euo pipefail
 
@@ -15,6 +19,7 @@ NC='\033[0m' # No Color
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+CONFIG_DIR="$REPO_ROOT/.github/workflows/config"
 
 # Default configuration
 HAULER_VERSION="${HAULER_VERSION:-1.3.0}"
@@ -149,38 +154,59 @@ build_airgap_assets() {
   cd "$REPO_ROOT" || exit 1
   
   # Build K3s store
-  print_step "Building K3s Hauler store..."
-  cd "$REPO_ROOT/hauler/k3s" || exit 1
-  hauler store sync \
-    --store k3s-store \
-    --platform "linux/$ARCH" \
-    --filename rancher-airgap-k3s.yaml 2>&1 | tee "$LOG_DIR/k3s-sync.log"
-  
-  print_step "K3s store contents:"
-  hauler store info --store k3s-store | tee "$LOG_DIR/k3s-store-info.log"
+  if [ -d "$REPO_ROOT/hauler/k3s/k3s-store" ]; then
+    print_warning "K3s store already exists, skipping sync..."
+    print_step "Using existing K3s store contents:"
+    cd "$REPO_ROOT/hauler/k3s" || exit 1
+    hauler store info --store k3s-store | tee "$LOG_DIR/k3s-store-info.log"
+  else
+    print_step "Building K3s Hauler store..."
+    cd "$REPO_ROOT/hauler/k3s" || exit 1
+    hauler store sync \
+      --store k3s-store \
+      --platform "linux/$ARCH" \
+      --filename rancher-airgap-k3s.yaml 2>&1 | tee "$LOG_DIR/k3s-sync.log"
+    
+    print_step "K3s store contents:"
+    hauler store info --store k3s-store | tee "$LOG_DIR/k3s-store-info.log"
+  fi
   
   # Build ESS store
-  print_step "Building ESS Hauler store..."
-  cd "$REPO_ROOT/hauler/ess-helm" || exit 1
-  hauler store sync \
-    --store ess-store \
-    --platform "linux/$ARCH" \
-    --filename rancher-airgap-ess-helm.yaml 2>&1 | tee "$LOG_DIR/ess-sync.log"
-  
-  print_step "ESS store contents:"
-  hauler store info --store ess-store | tee "$LOG_DIR/ess-store-info.log"
+  if [ -d "$REPO_ROOT/hauler/ess-helm/ess-store" ]; then
+    print_warning "ESS store already exists, skipping sync..."
+    print_step "Using existing ESS store contents:"
+    cd "$REPO_ROOT/hauler/ess-helm" || exit 1
+    hauler store info --store ess-store | tee "$LOG_DIR/ess-store-info.log"
+  else
+    print_step "Building ESS Hauler store..."
+    cd "$REPO_ROOT/hauler/ess-helm" || exit 1
+    hauler store sync \
+      --store ess-store \
+      --platform "linux/$ARCH" \
+      --filename rancher-airgap-ess-helm.yaml 2>&1 | tee "$LOG_DIR/ess-sync.log"
+    
+    print_step "ESS store contents:"
+    hauler store info --store ess-store | tee "$LOG_DIR/ess-store-info.log"
+  fi
   
   # Build Helm store
-  print_step "Building Helm Hauler store..."
-  cd "$REPO_ROOT/hauler/helm" || exit 1
-  hauler store sync \
-    --store helm-store \
-    --filename rancher-airgap-helm.yaml 2>&1 | tee "$LOG_DIR/helm-sync.log"
+  if [ -d "$REPO_ROOT/hauler/helm/helm-store" ]; then
+    print_warning "Helm store already exists, skipping sync..."
+    print_step "Using existing Helm store contents:"
+    cd "$REPO_ROOT/hauler/helm" || exit 1
+    hauler store info --store helm-store | tee "$LOG_DIR/helm-store-info.log"
+  else
+    print_step "Building Helm Hauler store..."
+    cd "$REPO_ROOT/hauler/helm" || exit 1
+    hauler store sync \
+      --store helm-store \
+      --filename rancher-airgap-helm.yaml 2>&1 | tee "$LOG_DIR/helm-sync.log"
+    
+    print_step "Helm store contents:"
+    hauler store info --store helm-store | tee "$LOG_DIR/helm-store-info.log"
+  fi
   
-  print_step "Helm store contents:"
-  hauler store info --store helm-store | tee "$LOG_DIR/helm-store-info.log"
-  
-  print_success "Airgap assets built successfully"
+  print_success "Airgap assets ready"
 }
 
 # Phase 2: Install K3s
@@ -199,30 +225,11 @@ install_k3s() {
   print_step "Configuring K3s registries..."
   mkdir -p /etc/rancher/k3s
   
-  cat > /etc/rancher/k3s/registries.yaml <<EOF
-mirrors:
-  "docker.io":
-    endpoint:
-      - "http://localhost:$K3S_REGISTRY_PORT"
-      - "http://localhost:$ESS_REGISTRY_PORT"
-  "ghcr.io":
-    endpoint:
-      - "http://localhost:$ESS_REGISTRY_PORT"
-  "oci.element.io":
-    endpoint:
-      - "http://localhost:$ESS_REGISTRY_PORT"
-  "*":
-    endpoint:
-      - "http://localhost:$K3S_REGISTRY_PORT"
-      - "http://localhost:$ESS_REGISTRY_PORT"
-configs:
-  "localhost:$K3S_REGISTRY_PORT":
-    tls:
-      insecure_skip_verify: true
-  "localhost:$ESS_REGISTRY_PORT":
-    tls:
-      insecure_skip_verify: true
-EOF
+  # Copy registry configuration from config directory
+  # Substitute port variables if needed
+  sed -e "s/localhost:5001/localhost:$K3S_REGISTRY_PORT/g" \
+      -e "s/localhost:5002/localhost:$ESS_REGISTRY_PORT/g" \
+      "$CONFIG_DIR/k3s-registries.yaml" > /etc/rancher/k3s/registries.yaml
   
   print_step "Downloading K3s from local fileserver..."
   cd "$REPO_ROOT/hauler/k3s" || exit 1
@@ -482,9 +489,16 @@ deploy_ess() {
   print_step "Helm version:"
   helm version
   
-  # Create ESS namespace
-  print_step "Creating ESS namespace..."
+  # Create ESS namespace with privileged Pod Security Standard for testing
+  print_step "Creating ESS namespace with privileged security for testing..."
   k3s kubectl create namespace ess --dry-run=client -o yaml | k3s kubectl apply -f -
+  k3s kubectl label namespace ess \
+    pod-security.kubernetes.io/enforce=privileged \
+    pod-security.kubernetes.io/audit=privileged \
+    pod-security.kubernetes.io/warn=privileged \
+    --overwrite
+  
+  print_warning "NOTE: Privileged Pod Security is for TESTING ONLY - not for production!"
   
   # Create TLS certificate
   print_step "Creating TLS certificate..."
@@ -497,31 +511,22 @@ deploy_ess() {
     --cert=/tmp/tls.crt --key=/tmp/tls.key \
     --dry-run=client -o yaml | k3s kubectl apply -f -
   
-  # Create ESS values file
-  print_step "Creating ESS values file..."
-  cat > /tmp/ess-values.yaml <<EOF
-# Minimal values compatible with matrix-stack 25.11.0 schema
-# Only set serverName (required). Leaving component blocks at defaults.
-serverName: ${DOMAIN}
-
-# Disable ingress TLS globally for local test (no ingress resources wanted)
-ingress:
-  tlsEnabled: false
-
-# Explicitly enable core components (they default to enabled but kept for clarity)
-synapse:
-  enabled: true
-elementWeb:
-  enabled: true
-matrixAuthenticationService:
-  enabled: true
-matrixRTC:
-  enabled: true
-elementAdmin:
-  enabled: true
-
-# Do NOT include per-component ingress sections or deprecated postgresql key (chart manages internal DB differently)
-EOF
+  # Prepare ESS values file with variable substitution
+  print_step "Preparing ESS Helm values..."
+  sed "s/ess\.local/${DOMAIN}/g" "$CONFIG_DIR/ess-values.yaml" > /tmp/ess-values.yaml
+  
+  # Validate ESS values against chart schema
+  print_step "Validating ESS values against Helm chart schema..."
+  if ! helm lint \
+    "oci://localhost:$ESS_REGISTRY_PORT/hauler/matrix-stack" \
+    --version "$ESS_CHART_VERSION" \
+    --values /tmp/ess-values.yaml \
+    --plain-http 2>&1 | tee "$LOG_DIR/helm-lint.log"; then
+    print_warning "Helm lint found issues (see $LOG_DIR/helm-lint.log)"
+    print_step "Continuing deployment anyway..."
+  else
+    print_success "ESS values validated successfully"
+  fi
   
   # Install ESS chart from local registry
   print_step "Installing ESS from local Hauler registry..."
@@ -626,11 +631,45 @@ validate_deployment() {
   fi
 }
 
-# Cleanup function
-cleanup() {
-  print_header "Cleanup"
+# Light cleanup function - preserves Hauler stores
+light_cleanup() {
+  print_header "Light Cleanup (Preserving Hauler Stores)"
   
-  read -p "Do you want to remove K3s and all test data? (y/N): " -n 1 -r
+  print_step "Stopping Hauler services..."
+  if [ -f "$WORK_DIR/k3s-registry.pid" ]; then
+    kill "$(cat "$WORK_DIR/k3s-registry.pid")" 2>/dev/null || true
+  fi
+  if [ -f "$WORK_DIR/ess-registry.pid" ]; then
+    kill "$(cat "$WORK_DIR/ess-registry.pid")" 2>/dev/null || true
+  fi
+  if [ -f "$WORK_DIR/fileserver.pid" ]; then
+    kill "$(cat "$WORK_DIR/fileserver.pid")" 2>/dev/null || true
+  fi
+  if [ -f "$WORK_DIR/helm-fileserver.pid" ]; then
+    kill "$(cat "$WORK_DIR/helm-fileserver.pid")" 2>/dev/null || true
+  fi
+  
+  pkill -f "hauler store serve" || true
+  
+  print_step "Uninstalling K3s..."
+  if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
+    /usr/local/bin/k3s-uninstall.sh
+  fi
+  
+  print_step "Removing temporary files (keeping Hauler stores)..."
+  rm -f "$WORK_DIR"/*.pid
+  rm -f "$WORK_DIR"/*.log
+  rm -rf "$LOG_DIR"
+  
+  print_success "Light cleanup completed - Hauler stores preserved in $REPO_ROOT/hauler"
+  print_step "Next run will skip Hauler sync and use existing stores"
+}
+
+# Full cleanup function
+cleanup() {
+  print_header "Full Cleanup"
+  
+  read -p "Do you want to remove K3s and all test data including Hauler stores? (y/N): " -n 1 -r
   echo
   
   if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -662,7 +701,12 @@ cleanup() {
   print_step "Removing work directory..."
   rm -rf "$WORK_DIR"
   
-  print_success "Cleanup completed"
+  print_step "Removing Hauler stores..."
+  rm -rf "$REPO_ROOT/hauler/k3s/k3s-store"
+  rm -rf "$REPO_ROOT/hauler/ess-helm/ess-store"
+  rm -rf "$REPO_ROOT/hauler/helm/helm-store"
+  
+  print_success "Full cleanup completed"
 }
 
 # Main function
@@ -690,7 +734,11 @@ main() {
       deploy_ess
       validate_deployment
       ;;
-    cleanup|clean)
+    light-cleanup|reset)
+      check_root
+      light_cleanup
+      ;;
+    cleanup|clean|full-cleanup)
       check_root
       cleanup
       ;;
@@ -698,9 +746,12 @@ main() {
       echo "Usage: $0 [command]"
       echo ""
       echo "Commands:"
-      echo "  run       Run the complete airgap test (default)"
-      echo "  cleanup   Remove K3s and test data"
-      echo "  help      Show this help message"
+      echo "  run            Run the complete airgap test (default)"
+      echo "  light-cleanup  Reset K3s and ESS but keep Hauler stores (fast iteration)"
+      echo "  reset          Alias for light-cleanup"
+      echo "  cleanup        Full cleanup: remove everything including Hauler stores"
+      echo "  clean          Alias for cleanup"
+      echo "  help           Show this help message"
       echo ""
       echo "Environment Variables:"
       echo "  DOMAIN              Domain for ESS (default: ess.local)"

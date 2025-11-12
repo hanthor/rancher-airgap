@@ -393,68 +393,40 @@ jobs:
       - name: Deploy ESS Helm Chart
         run: |
           echo "::group::Deploying ESS"
-          # Create namespace
+          # Create namespace with privileged Pod Security for testing
           kubectl create namespace ess
+          kubectl label namespace ess \
+            pod-security.kubernetes.io/enforce=privileged \
+            pod-security.kubernetes.io/audit=privileged \
+            pod-security.kubernetes.io/warn=privileged
           
-          # Create TLS secret (self-signed for testing)
+          echo "::warning::Privileged Pod Security is for TESTING ONLY - not for production!"
+          
+          # Create TLS secret (self-signed wildcard certificate for testing)
           openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
             -keyout /tmp/tls.key -out /tmp/tls.crt \
             -subj "/CN=*.${DOMAIN}" \
             -addext "subjectAltName=DNS:${DOMAIN},DNS:*.${DOMAIN}"
           
-          kubectl create secret tls ess-wildcard-tls -n ess \
+          kubectl create secret tls ess-certificate -n ess \
             --cert=/tmp/tls.crt --key=/tmp/tls.key
           
-          # Create values file
-          cat > /tmp/ess-values.yaml << EOF
-          serverName: ${DOMAIN}
+          # Prepare ESS values file with variable substitution
+          echo "Preparing ESS Helm values from config template..."
+          sed "s/ess\.local/${DOMAIN}/g" .github/workflows/config/ess-values.yaml > /tmp/ess-values.yaml
           
-          synapse:
-            ingress:
-              enabled: false
-              host: matrix.${DOMAIN}
-              tls:
-                secretName: ess-wildcard-tls
-          
-          matrixAuthenticationService:
-            ingress:
-              enabled: false
-              host: account.${DOMAIN}
-              tls:
-                secretName: ess-wildcard-tls
-          
-          matrixRTC:
-            ingress:
-              enabled: false
-              host: mrtc.${DOMAIN}
-              tls:
-                secretName: ess-wildcard-tls
-          
-          elementWeb:
-            ingress:
-              enabled: false
-              host: chat.${DOMAIN}
-              tls:
-                secretName: ess-wildcard-tls
-          
-          elementAdmin:
-            ingress:
-              enabled: false
-              host: admin.${DOMAIN}
-              tls:
-                secretName: ess-wildcard-tls
-          
-          wellKnownDelegation:
-            ingress:
-              enabled: false
-              host: ${DOMAIN}
-              tls:
-                secretName: ess-wildcard-tls
-          
-          # Use internal PostgreSQL for testing
-          postgresql:
-            enabled: true
-          EOF
+          # Validate values against chart schema
+          echo "Validating ESS values against Helm chart schema..."
+          if ! helm lint \
+            oci://localhost:5000/hauler/matrix-stack \
+            --version ${ESS_CHART_VERSION} \
+            --values /tmp/ess-values.yaml \
+            --plain-http 2>&1 | tee /tmp/helm-lint.log; then
+            echo "::warning::Helm lint found issues (see logs)"
+            echo "Continuing deployment anyway..."
+          else
+            echo "✅ ESS values validated successfully"
+          fi
           
           # Install ESS chart from local registry
           # Note: Helm needs to be configured to use insecure registry
