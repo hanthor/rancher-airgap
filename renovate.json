@@ -135,6 +135,50 @@
       "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
     },
     {
+      "description": "Hauler version in local-airgap-test script",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/scripts/local-airgap-test\\.sh$"],
+      "matchStrings": [
+        "HAULER_VERSION=\"\\$\\{HAULER_VERSION:-(?<currentValue>[0-9.]+)\\}\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "hauler-dev/hauler",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "description": "K3s version in local-airgap-test script",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/scripts/local-airgap-test\\.sh$"],
+      "matchStrings": [
+        "K3S_VERSION=\"\\$\\{K3S_VERSION:-v(?<currentValue>[0-9.]+\\+k3s\\d+)\\}\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "k3s-io/k3s",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+\\+k3s\\d+)$"
+    },
+    {
+      "description": "Helm version in local-airgap-test script",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/scripts/local-airgap-test\\.sh$"],
+      "matchStrings": [
+        "HELM_VERSION=\"\\$\\{HELM_VERSION:-v(?<currentValue>[0-9.]+)\\}\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "helm/helm",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "description": "ESS Chart version in local-airgap-test script",
+      "customType": "regex",
+      "fileMatch": ["^\\.github/workflows/scripts/local-airgap-test\\.sh$"],
+      "matchStrings": [
+        "ESS_CHART_VERSION=\"\\$\\{ESS_CHART_VERSION:-(?<currentValue>[0-9.]+)\\}\""
+      ],
+      "datasourceTemplate": "helm",
+      "depNameTemplate": "matrix-stack",
+      "registryUrlTemplate": "oci://ghcr.io/element-hq/ess-helm"
+    },
+    {
       "description": "ESS Chart version in test-airgap workflow",
       "customType": "regex",
       "fileMatch": ["^\\.github/workflows/test-airgap\\.yaml$"],

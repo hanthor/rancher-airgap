@@ -1,523 +1,89 @@
-name: Test Airgap K3s/ESS Deployment
+name: Local Airgap Test for K3s + ESS
 
 on:
   workflow_dispatch:
-    inputs:
-      debug_enabled:
-        description: 'Enable debug mode (tmate session)'
-        required: false
-        default: false
-        type: boolean
-  pull_request:
-    paths:
-      - 'hauler/**'
-      - '.github/workflows/test-airgap.yaml'
   push:
     branches:
       - main
-    paths:
-      - 'hauler/**'
-      - '.github/workflows/test-airgap.yaml'
 
 env:
-  HAULER_VERSION: "1.3.0"
-  K3S_VERSION: "v1.33.5+k3s1"
-  HELM_VERSION: "v3.19.0"
-  ESS_CHART_VERSION: "25.11.0"
-  DOMAIN: "ess.local"
+  HAULER_VERSION: 1.3.1
+  K3S_VERSION: v1.33.5+k3s1
+  HELM_VERSION: v3.19.0
+  ESS_CHART_VERSION: 25.11.0
+  DOMAIN: ess.local
+  PLATFORM: ${{ runner.arch }}
 
 jobs:
-  test-airgap-deployment:
-    name: Test Airgap K3s/ESS on K3d
+  airgap-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      pull-requests: write
-    
+    defaults:
+      run:
+        shell: bash
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install K3d
+      - name: Set up environment variables
         run: |
-          curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
-          k3d version
+          echo "HAULER_VERSION=${HAULER_VERSION}" >> $GITHUB_ENV
+          echo "K3S_VERSION=${K3S_VERSION}" >> $GITHUB_ENV
+          echo "HELM_VERSION=${HELM_VERSION}" >> $GITHUB_ENV
+          echo "ESS_CHART_VERSION=${ESS_CHART_VERSION}" >> $GITHUB_ENV
+          echo "DOMAIN=${DOMAIN}" >> $GITHUB_ENV
+          echo "PLATFORM=${PLATFORM}" >> $GITHUB_ENV
 
-      - name: Install Hauler
-        run: |
-          curl -sfL https://get.hauler.dev | bash
-          hauler version
-
-      - name: Install Network Tools
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y iptables tcpdump net-tools iproute2 dnsutils
+          sudo apt-get install -y curl jq
 
-      # ============================================
-      # PHASE 1: BUILD AIRGAP ASSETS (CONNECTED)
-      # ============================================
-      
-      - name: Build K3s Hauler Store
+      - name: Source airgap-lib.sh and hauler-functions.sh
         run: |
-          echo "::group::Syncing K3s Store"
-          cd hauler/k3s || exit 1
-          hauler store sync \
-            --store k3s-store \
-            --platform linux/amd64 \
-            --filename rancher-airgap-k3s.yaml
-          hauler store info --store k3s-store
-          echo "::endgroup::"
+          set -euo pipefail
+          SCRIPT_DIR="${GITHUB_WORKSPACE}/.github/workflows"
+          REPO_ROOT="${GITHUB_WORKSPACE}"
+          CONFIG_DIR="$REPO_ROOT/.github/workflows/config"
+          source "$SCRIPT_DIR/airgap-lib.sh"
+          source "$SCRIPT_DIR/hauler-functions.sh"
 
-      - name: Build ESS Hauler Store
+      - name: Run Local Airgap Test
         run: |
-          echo "::group::Syncing ESS Store"
-          cd hauler/ess-helm || exit 1
-          hauler store sync \
-            --store ess-store \
-            --platform linux/amd64 \
-            --filename rancher-airgap-ess-helm.yaml
-          hauler store info --store ess-store
-          echo "::endgroup::"
+          set -euo pipefail
+          SCRIPT_DIR="${GITHUB_WORKSPACE}/.github/workflows"
+          REPO_ROOT="${GITHUB_WORKSPACE}"
+          CONFIG_DIR="$REPO_ROOT/.github/workflows/config"
+          WORK_DIR="/tmp/airgap-test"
+          LOG_DIR="$WORK_DIR/logs"
+          K3S_REGISTRY_PORT=5001
+          ESS_REGISTRY_PORT=5002
+          K3S_FILESERVER_PORT=8080
+          HELM_FILESERVER_PORT=8081
+          ARCH=$(detect_architecture "${PLATFORM}")
 
-      - name: Build Helm Hauler Store
-        run: |
-          echo "::group::Syncing Helm Store"
-          cd hauler/helm || exit 1
-          hauler store sync \
-            --store helm-store \
-            --filename rancher-airgap-helm.yaml
-          hauler store info --store helm-store
-          echo "::endgroup::"
+          # Setup directories
+          setup_directories "$WORK_DIR" "$LOG_DIR"
 
-      - name: Create Linux OS Repository
-        run: |
-          echo "::group::Creating OS Repository"
-          mkdir -p /tmp/os-repo
-          cd /tmp/os-repo || exit 1
-          
-          # Note: This is a demonstration step for Ubuntu/Debian systems
-          # For RHEL/CentOS airgap, use createrepo-c and repotrack instead
-          
-          # Download packages (simulating airgap package collection)
-          echo "Downloading common packages for offline repository..."
-          sudo apt-get download \
-            iptables \
-            git \
-            curl \
-            wget \
-            ca-certificates \
-            gnupg \
-            lsb-release \
-            apt-transport-https \
-            software-properties-common 2>&1 || echo "Some packages may have failed to download"
-          
-          # Create package list
-          ls -1 *.deb > package-list.txt 2>/dev/null || echo "No packages downloaded" > package-list.txt
-          echo "OS Repository contents:"
-          cat package-list.txt
-          
-          # For Debian/Ubuntu, you would use dpkg-scanpackages to create a repository
-          # For RHEL/CentOS, you would use createrepo_c
-          echo ""
-          echo "Package count: $(ls -1 *.deb 2>/dev/null | wc -l)"
-          echo "::endgroup::"
+          # Install Hauler
+          install_hauler "$HAULER_VERSION" "$ARCH"
 
-      # ============================================
-      # PHASE 2: SETUP ISOLATED NETWORK ENVIRONMENT
-      # ============================================
+          # Build Hauler stores
+          build_all_hauler_stores "$REPO_ROOT" "$ARCH" "$LOG_DIR"
 
-      - name: Create K3d Cluster with Registry
-        run: |
-          echo "::group::Creating K3d Cluster"
-          # Create k3d cluster with embedded registry
-          k3d cluster create airgap-test \
-            --servers 1 \
-            --agents 0 \
-            --registry-create airgap-registry:0.0.0.0:5000 \
-            --k3s-arg "--disable=traefik@server:0" \
-            --wait
-          
-          # Get cluster info
-          kubectl cluster-info
-          kubectl get nodes
-          echo "::endgroup::"
+          # Configure K3s registries
+          configure_k3s_registries "$CONFIG_DIR/k3s-registries.yaml" "$K3S_REGISTRY_PORT" "$ESS_REGISTRY_PORT"
 
-      - name: Start Hauler Registry and Fileserver
-        run: |
-          echo "::group::Starting Hauler Services"
-          
-          # Source shared functions
-          source .github/workflows/scripts/hauler-functions.sh
-          
-          # Create directories for fileservers
-          mkdir -p /tmp/k3s-fileserver /tmp/helm-fileserver
-          
-          # Create log file placeholders to ensure they exist
-          touch /tmp/k3s-registry.log /tmp/ess-registry.log /tmp/fileserver.log /tmp/helm-fileserver.log
-          
-          # Start registry for K3s
-          start_hauler_registry 5001 "k3s-store" "hauler/k3s" "/tmp/k3s-registry.log" "/tmp/k3s-registry.pid" || exit 1
-          
-          # Start registry for ESS
-          start_hauler_registry 5002 "ess-store" "hauler/ess-helm" "/tmp/ess-registry.log" "/tmp/ess-registry.pid" || exit 1
-          
-          # Start fileserver for binaries (with directory to prevent permission issues)
-          start_hauler_fileserver 8080 "k3s-store" "hauler/k3s" "/tmp/fileserver.log" "/tmp/fileserver.pid" "/tmp/k3s-fileserver" || exit 1
-          
-          # Start fileserver for Helm (with directory to prevent permission issues)
-          start_hauler_fileserver 8081 "helm-store" "hauler/helm" "/tmp/helm-fileserver.log" "/tmp/helm-fileserver.pid" "/tmp/helm-fileserver" || exit 1
-          
-          echo "All Hauler services started successfully"
-          echo "::endgroup::"
+          # Install K3s
+          install_k3s_from_hauler "$REPO_ROOT" "$K3S_VERSION" "$ARCH" "$WORK_DIR" "$LOG_DIR" "$K3S_FILESERVER_PORT"
 
-      - name: Setup Network Monitoring
-        run: |
-          echo "::group::Setting up Network Monitor"
-          # Use the network-monitor.sh script
-          if [ -f .github/workflows/scripts/network-monitor.sh ]; then
-            # Set environment variables for the monitor
-            export LOG_FILE="/tmp/network-activity.log"
-            export ALERT_FILE="/tmp/network-alerts.log"
-            export MONITOR_INTERVAL="5"
-            
-            nohup bash .github/workflows/scripts/network-monitor.sh > /tmp/monitor.log 2>&1 &
-            echo $! > /tmp/monitor.pid
-            echo "Network monitoring started using shared script"
-          else
-            echo "::warning::network-monitor.sh script not found, using inline monitor"
-            # Fallback to inline monitoring
-            cat > /tmp/monitor-network.sh << 'SCRIPT'
-          #!/bin/bash
-          LOG_FILE="/tmp/network-activity.log"
-          
-          echo "Network monitoring started at $(date)" > $LOG_FILE
-          echo "Watching for external network connections..." >> $LOG_FILE
-          echo "Allowed: localhost, 127.0.0.1, k3d, hauler registry/fileserver" >> $LOG_FILE
-          echo "---" >> $LOG_FILE
-          
-          # Monitor network connections
-          while true; do
-            # Check for external connections (excluding local and k3d)
-            netstat -tunapo 2>/dev/null | grep ESTABLISHED | \
-              grep -v "127.0.0.1" | \
-              grep -v "localhost" | \
-              grep -v ":5000" | \
-              grep -v ":5001" | \
-              grep -v ":5002" | \
-              grep -v ":8080" | \
-              grep -v ":8081" | \
-              grep -v "k3d" >> $LOG_FILE
-            sleep 5
-          done
-          SCRIPT
-            
-            chmod +x /tmp/monitor-network.sh
-            nohup /tmp/monitor-network.sh > /tmp/monitor.log 2>&1 &
-            echo $! > /tmp/monitor.pid
-            echo "Network monitoring started using fallback"
-          fi
-          echo "::endgroup::"
+          # Start Hauler services
+          start_hauler_services
 
-      # ============================================
-      # PHASE 3: SIMULATE AIRGAP - BLOCK INTERNET
-      # ============================================
+          # Install Helm
+          install_helm_from_hauler "$HELM_VERSION" "$ARCH" "$HELM_FILESERVER_PORT"
 
-      - name: Configure Network Isolation
-        run: |
-          echo "::group::Configuring Network Isolation"
-          # Note: In GitHub Actions, we can't fully block internet
-          # But we can monitor and detect attempts
-          # In a real scenario, you would use iptables to block outbound traffic
-          
-          # Create a marker file to track if we're in "airgap mode"
-          echo "AIRGAP_MODE=true" > /tmp/airgap-status
-          
-          # List current iptables rules (for reference)
-          echo "Current iptables rules:"
-          sudo iptables -L -n -v || true
-          
-          echo "::notice::Network isolation configured - monitoring for external access"
-          echo "::endgroup::"
+          # Deploy ESS
+          deploy_ess "$DOMAIN" "$ESS_CHART_VERSION" "$ESS_REGISTRY_PORT" "$CONFIG_DIR" "$LOG_DIR" "$REPO_ROOT"
 
-      # ============================================
-      # PHASE 4: DEPLOY FROM LOCAL SOURCES ONLY
-      # ============================================
-
-      - name: Configuring Local Registry
-        shell: bash
-        run: |
-          echo "::group::Configuring Local Registry"
-
-          # Try to find the k3d server container (handle naming like k3d-<cluster>-server-0)
-          # Prefer exact server container names, fallback to any container that starts with k3d-<cluster>-server
-          CLUSTER_NAME="airgap-test"
-          K3D_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "^k3d-${CLUSTER_NAME}-server(-|$)" | head -n1 || true)
-
-          # If that failed, attempt a looser match (older/simpler pattern)
-          if [ -z "$K3D_CONTAINER" ]; then
-            K3D_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E "^k3d-${CLUSTER_NAME}" | grep -E "server" | head -n1 || true)
-          fi
-
-          # Final fallback: try any container with k3d and server in the name
-          if [ -z "$K3D_CONTAINER" ]; then
-            K3D_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E 'k3d-.*server' | head -n1 || true)
-          fi
-
-          if [ -z "$K3D_CONTAINER" ]; then
-            echo "::error::Could not find the k3d server container for cluster '${CLUSTER_NAME}'. Aborting registry config."
-            echo "=== docker ps ==="
-            docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
-            echo "=== k3d cluster list ==="
-            k3d cluster list || true
-            echo "::endgroup::"
-            exit 1
-          fi
-
-          echo "Using container: ${K3D_CONTAINER}"
-
-          # Create registries.yaml
-          cat > /tmp/registries.yaml <<'EOF'
-          mirrors:
-            "docker.io":
-              endpoint:
-                - "http://host.k3d.internal:5001"
-                - "http://host.k3d.internal:5002"
-            "ghcr.io":
-              endpoint:
-                - "http://host.k3d.internal:5002"
-            "oci.element.io":
-              endpoint:
-                - "http://host.k3d.internal:5002"
-            "*":
-              endpoint:
-                - "http://host.k3d.internal:5001"
-                - "http://host.k3d.internal:5002"
-          configs:
-            "host.k3d.internal:5001":
-              tls:
-                insecure_skip_verify: true
-            "host.k3d.internal:5002":
-              tls:
-                insecure_skip_verify: true
-          EOF
-
-          # Ensure target directory exists inside the container, then copy
-          docker exec "${K3D_CONTAINER}" sh -c "mkdir -p /etc/rancher/k3s"
-          docker cp /tmp/registries.yaml "${K3D_CONTAINER}":/etc/rancher/k3s/registries.yaml
-
-          # Restart k3s to apply registry config (graceful fallback)
-          docker exec "${K3D_CONTAINER}" sh -c "killall k3s || true"
-          sleep 10
-
-          echo "Registry configuration applied"
-          echo "::endgroup::"
-
-      - name: Install Helm from Local Fileserver
-        run: |
-          echo "::group::Installing Helm"
-          
-          # Detect architecture (GitHub Actions runners are amd64, but this makes it explicit)
-          ARCH=$(uname -m)
-          case "$ARCH" in
-            x86_64|amd64)
-              ARCH="amd64"
-              ;;
-            aarch64|arm64)
-              ARCH="arm64"
-              ;;
-            *)
-              echo "::error::Unsupported architecture: $ARCH"
-              exit 1
-              ;;
-          esac
-          
-          # Download Helm from local fileserver
-          # Note: The Helm manifest saves the file as helm-linux-{arch}.tar.gz (without version)
-          echo "Downloading Helm for linux/$ARCH from fileserver..."
-          if ! curl -sfL "http://localhost:8081/helm-linux-${ARCH}.tar.gz" -o /tmp/helm.tar.gz; then
-            echo "::error::Failed to download Helm from fileserver"
-            echo "Checking fileserver contents:"
-            curl -f http://localhost:8081/ || true
-            exit 1
-          fi
-          
-          # Verify download
-          if [ ! -f /tmp/helm.tar.gz ] || [ ! -s /tmp/helm.tar.gz ]; then
-            echo "::error::Downloaded Helm tarball is missing or empty"
-            ls -lh /tmp/helm.tar.gz || true
-            exit 1
-          fi
-          
-          echo "Extracting Helm tarball..."
-          tar -xzf /tmp/helm.tar.gz -C /tmp
-          
-          # Verify extraction
-          if [ ! -f "/tmp/linux-${ARCH}/helm" ]; then
-            echo "::error::Helm binary not found after extraction"
-            echo "Contents of /tmp after extraction:"
-            ls -lR /tmp/ | grep -A20 "helm" || true
-            echo "Tarball contents:"
-            tar -tzf /tmp/helm.tar.gz || true
-            exit 1
-          fi
-          
-          sudo mv "/tmp/linux-${ARCH}/helm" /usr/local/bin/helm
-          sudo chmod +x /usr/local/bin/helm
-          
-          helm version
-          echo "::endgroup::"
-
-      - name: Verify No External Image Pulls
-        run: |
-          echo "::group::Pre-deployment verification"
-          # Check network activity log
-          if [ -f /tmp/network-activity.log ]; then
-            echo "Network activity before deployment:"
-            cat /tmp/network-activity.log
-          fi
-          echo "::endgroup::"
-
-      - name: Deploy ESS Helm Chart
-        run: |
-          echo "::group::Deploying ESS"
-          # Create namespace with privileged Pod Security for testing
-          kubectl create namespace ess
-          kubectl label namespace ess \
-            pod-security.kubernetes.io/enforce=privileged \
-            pod-security.kubernetes.io/audit=privileged \
-            pod-security.kubernetes.io/warn=privileged
-          
-          echo "::warning::Privileged Pod Security is for TESTING ONLY - not for production!"
-          
-          # Create TLS secret (self-signed wildcard certificate for testing)
-          openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-            -keyout /tmp/tls.key -out /tmp/tls.crt \
-            -subj "/CN=*.${DOMAIN}" \
-            -addext "subjectAltName=DNS:${DOMAIN},DNS:*.${DOMAIN}"
-          
-          kubectl create secret tls ess-certificate -n ess \
-            --cert=/tmp/tls.crt --key=/tmp/tls.key
-          
-          # Prepare ESS values file with variable substitution
-          echo "Preparing ESS Helm values from config template..."
-          sed "s/ess\.local/${DOMAIN}/g" .github/workflows/config/ess-values.yaml > /tmp/ess-values.yaml
-          
-          # Validate values against chart schema
-          echo "Validating ESS values against Helm chart schema..."
-          if ! helm lint \
-            oci://localhost:5000/hauler/matrix-stack \
-            --version ${ESS_CHART_VERSION} \
-            --values /tmp/ess-values.yaml \
-            --plain-http 2>&1 | tee /tmp/helm-lint.log; then
-            echo "::warning::Helm lint found issues (see logs)"
-            echo "Continuing deployment anyway..."
-          else
-            echo "✅ ESS values validated successfully"
-          fi
-          
-          # Install ESS chart from local registry
-          # Note: Helm needs to be configured to use insecure registry
-          echo "Configuring Helm to use local registry..."
-          
-          # Try to pull chart from local registry with plain-http flag
-          echo "Installing ESS helm chart from local registry..."
-          helm upgrade --install ess \
-            oci://localhost:5002/hauler/matrix-stack \
-            --version ${ESS_CHART_VERSION} \
-            --namespace ess \
-            -f /tmp/ess-values.yaml \
-            --timeout 10m \
-            --plain-http \
-            --wait || {
-              echo "::warning::Direct OCI pull failed, attempting alternative method..."
-              
-              # Alternative: Pull chart first, then install from tarball
-              echo "Pulling chart from Hauler registry..."
-              mkdir -p /tmp/charts
-              if helm pull oci://localhost:5002/hauler/matrix-stack --version ${ESS_CHART_VERSION} --plain-http -d /tmp/charts; then
-                echo "Installing from pulled chart..."
-                helm upgrade --install ess \
-                  /tmp/charts/matrix-stack-${ESS_CHART_VERSION}.tgz \
-                  --namespace ess \
-                  -f /tmp/ess-values.yaml \
-                  --timeout 10m \
-                  --wait
-              else
-                echo "::error::Failed to install ESS chart"
-                kubectl get pods -n ess
-                kubectl describe pods -n ess
-                exit 1
-              fi
-            }
-          
-          echo "::endgroup::"
-
-      # ============================================
-      # PHASE 5: VALIDATION AND VERIFICATION
-      # ============================================
-
-      - name: Wait for ESS Pods
-        run: |
-          echo "::group::Waiting for ESS pods"
-          # Wait for all pods to be ready
-          kubectl wait --for=condition=ready pod \
-            --all \
-            -n ess \
-            --timeout=600s || true
-          
-          # Show pod status
-          kubectl get pods -n ess -o wide
-          echo "::endgroup::"
-
-      - name: Verify Image Sources
-        run: |
-          echo "::group::Verifying Image Sources"
-          # Use the verify-images.sh script for consistent validation
-          if [ -f .github/workflows/scripts/verify-images.sh ]; then
-            bash .github/workflows/scripts/verify-images.sh ess || {
-              echo "::error::Image verification failed - external images detected"
-              exit 1
-            }
-          else
-            echo "::warning::verify-images.sh script not found, skipping verification"
-          fi
-          echo "::endgroup::"
-
-      - name: Check Network Activity
-        run: |
-          echo "::group::Network Activity Report"
-          # Stop network monitor
-          if [ -f /tmp/monitor.pid ]; then
-            kill $(cat /tmp/monitor.pid) || true
-          fi
-          
-          # Show network activity log
-          if [ -f /tmp/network-activity.log ]; then
-            echo "External network connections detected:"
-            cat /tmp/network-activity.log
-            
-            # Count external connections
-            EXTERNAL_CONN=$(grep -c "ESTABLISHED" /tmp/network-activity.log || echo "0")
-            if [ "$EXTERNAL_CONN" -gt 10 ]; then
-              echo "::warning::Detected $EXTERNAL_CONN external connections - review network activity"
-            else
-              echo "::notice::Minimal external network activity detected"
-            fi
-          fi
-          echo "::endgroup::"
-
-      - name: Verify ESS Components
-        run: |
-          echo "::group::ESS Component Verification"
-          # Check deployment status
-          kubectl get deployments -n ess
-          
-          # Check services
-          kubectl get services -n ess
-          
-          # Check for critical pods
-          CRITICAL_PODS=(
-            "synapse"
-            "element-web"
-            "matrix-authen
+          # Validate deployment
+          validate_ess_deployment "$DOMAIN" "$K3S_VERSION" "$ESS_CHART_VERSION" "$ARCH"

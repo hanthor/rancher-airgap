@@ -4,16 +4,16 @@ export vK3SSELinux=1.6
 export vK3Smodified=$(echo "$vK3S" | cut -d'.' -f1,2)
 
 # Setup Working Directory
-rm -rf /opt/hauler/k3s
-mkdir -p /opt/hauler/k3s
-cd /opt/hauler/k3s
+rm -rf .build/k3s
+mkdir -p .build/k3s
+cd .build/k3s
 
 # Download K3S Images and Modify the List
 # https://github.com/k3s-io/k3s
 k3sImages=$(curl -sSfL https://github.com/k3s-io/k3s/releases/download/v${vK3S}+k3s1/k3s-images.txt | sed -e "s/docker\.io\///g" -e "s/^/    - name: /")
 
 # Create Hauler Manifest
-cat << EOF >> /opt/hauler/k3s/rancher-airgap-k3s.yaml
+cat << EOF >> .build/k3s/rancher-airgap-k3s.yaml
 apiVersion: content.hauler.cattle.io/v1
 kind: Files
 metadata:
@@ -44,10 +44,6 @@ spec:
       name: k3s-selinux-${vK3SSELinux}-1.el8.noarch.rpm
     - path: https://github.com/k3s-io/k3s-selinux/releases/download/v${vK3SSELinux}.latest.1/k3s-selinux-${vK3SSELinux}-1.el9.noarch.rpm
       name: k3s-selinux-${vK3SSELinux}-1.el7.noarch.rpm
-    # Windows AMD64 (K3s does not have native Windows support - this would be for WSL2)
-    # Note: K3s runs in WSL2 on Windows, using the Linux binary
-    # macOS ARM64 (K3s runs in containers/VMs on macOS)
-    # Note: K3s doesn't have native macOS binaries - runs via Docker Desktop/Rancher Desktop
 ---
 apiVersion: content.hauler.cattle.io/v1
 kind: Images

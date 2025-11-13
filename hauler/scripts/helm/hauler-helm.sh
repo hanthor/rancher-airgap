@@ -2,13 +2,13 @@
 export vHelm=3.19.0
 
 # Setup Working Directory
-rm -rf /opt/hauler/helm
-mkdir -p /opt/hauler/helm
-cd /opt/hauler/helm
+rm -rf .build/helm
+mkdir -p .build/helm
+cd .build/helm
 
 # Create Hauler Manifest
 # Helm -> https://github.com/helm/helm
-cat << EOF >> /opt/hauler/helm/rancher-airgap-helm.yaml
+cat << EOF >> .build/helm/rancher-airgap-helm.yaml
 apiVersion: content.hauler.cattle.io/v1
 kind: Files
 metadata:

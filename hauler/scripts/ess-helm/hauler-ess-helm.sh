@@ -11,9 +11,9 @@ fi
 export vESSHelmChart=25.11.0
 
 # Setup Working Directory
-rm -rf /opt/hauler/ess-helm
-mkdir -p /opt/hauler/ess-helm
-cd /opt/hauler/ess-helm
+rm -rf .build/ess-helm
+mkdir -p .build/ess-helm
+cd .build/ess-helm
 
 echo "Fetching ESS Helm chart values.yaml to extract image versions..."
 
@@ -46,7 +46,7 @@ echo "  Matrix Tools: ${vMatrixTools}"
 echo ""
 
 # Create Hauler Manifest
-cat << EOF >> /opt/hauler/ess-helm/rancher-airgap-ess-helm.yaml
+cat << EOF >> .build/ess-helm/rancher-airgap-ess-helm.yaml
 apiVersion: content.hauler.cattle.io/v1
 kind: Charts
 metadata:
@@ -85,7 +85,7 @@ spec:
     - name: ghcr.io/element-hq/ess-helm/matrix-tools:${vMatrixTools}
 EOF
 
-echo "ESS Helm manifest generated at /opt/hauler/ess-helm/rancher-airgap-ess-helm.yaml"
+echo "ESS Helm manifest generated at .build/ess-helm/rancher-airgap-ess-helm.yaml"
 echo ""
 echo "To update versions, modify the variables at the top of this script and re-run."
 echo "For the most current image versions, refer to:"
