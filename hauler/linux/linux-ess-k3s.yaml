@@ -21,6 +21,10 @@ spec:
       name: k3s-selinux-1.6-1.el8.noarch.rpm
     - path: https://github.com/k3s-io/k3s-selinux/releases/download/v1.6.latest.1/k3s-selinux-1.6-1.el9.noarch.rpm
       name: k3s-selinux-1.6-1.el7.noarch.rpm
+    # Helm binaries
+    - path: https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz
+      name: helm-linux-amd64.tar.gz
+
 ---
 apiVersion: content.hauler.cattle.io/v1
 kind: Images
@@ -36,3 +40,48 @@ spec:
     - name: rancher/mirrored-library-traefik:3.3.6
     - name: rancher/mirrored-metrics-server:v0.8.0
     - name: rancher/mirrored-pause:3.6
+---
+apiVersion: content.hauler.cattle.io/v1
+kind: Files
+metadata:
+  name: rancher-airgap-files-helm
+spec:
+  files:
+---
+apiVersion: content.hauler.cattle.io/v1
+kind: Charts
+metadata:
+  name: rancher-airgap-charts-ess
+spec:
+  charts:
+    - name: matrix-stack
+      repoURL: oci://ghcr.io/element-hq/ess-helm
+      version: 25.11.0
+---
+apiVersion: content.hauler.cattle.io/v1
+kind: Images
+metadata:
+  name: rancher-airgap-images-ess-core
+spec:
+  images:
+    # Synapse (Matrix Homeserver)
+    - name: ghcr.io/element-hq/synapse:v1.123.0
+    # Element Web (Matrix Client)
+    - name: ghcr.io/element-hq/element-web:v1.12.3
+    # Element Admin
+    - name: oci.element.io/element-admin:0.1.8
+    # Matrix Authentication Service
+    - name: ghcr.io/element-hq/matrix-authentication-service:0.17.0
+    # Matrix RTC Backend (LiveKit JWT Service)
+    - name: ghcr.io/element-hq/lk-jwt-service:0.3.0
+    # LiveKit Server (for Matrix RTC)
+    - name: docker.io/livekit/livekit-server:v1.9.1
+    # PostgreSQL
+    - name: docker.io/library/postgres:17.2-alpine
+    # HAProxy
+    - name: docker.io/library/haproxy:3.2-alpine
+    # Redis (for Synapse)
+    - name: docker.io/library/redis:7.4-alpine
+    # Matrix Tools (used for init jobs and utilities)
+    - name: ghcr.io/element-hq/ess-helm/matrix-tools:0.5.6
+

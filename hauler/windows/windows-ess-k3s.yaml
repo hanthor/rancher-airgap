@@ -1,0 +1,59 @@
+apiVersion: content.hauler.cattle.io/v1
+kind: Files
+metadata:
+  name: rancher-airgap-files-macos
+spec:
+  files:
+    # k3s AMD64
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s-airgap-images-amd64.tar.zst
+      name: k3s-airgap-images-amd64.tar.zst
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/sha256sum-amd64.txt
+      name: sha256sum-amd64.txt
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s-amd64
+      name: k3s-amd64
+    # kubectl for Windows AMD64
+    - path: https://dl.k8s.io/release/v1.29.4/bin/windows/amd64/kubectl.exe
+      name: kubectl.exe
+    # k9s for Windows AMD64
+    - path: https://github.com/derailed/k9s/releases/download/v0.32.4/k9s_Windows_amd64.tar.gz
+      name: k9s_Windows_amd64.tar.gz
+    # Helm binaries
+    - path: https://get.helm.sh/helm-v3.19.0-windows-amd64.zip
+      name: helm-windows-amd64.zip
+---
+apiVersion: content.hauler.cattle.io/v1
+kind: Charts
+metadata:
+  name: rancher-airgap-charts-ess
+spec:
+  charts:
+    - name: matrix-stack
+      repoURL: oci://ghcr.io/element-hq/ess-helm
+      version: 25.11.0
+---
+apiVersion: content.hauler.cattle.io/v1
+kind: Images
+metadata:
+  name: rancher-airgap-images-ess-core
+spec:
+  images:
+    # Synapse (Matrix Homeserver)
+    - name: ghcr.io/element-hq/synapse:v1.123.0
+    # Element Web (Matrix Client)
+    - name: ghcr.io/element-hq/element-web:v1.12.3
+    # Element Admin
+    - name: oci.element.io/element-admin:0.1.8
+    # Matrix Authentication Service
+    - name: ghcr.io/element-hq/matrix-authentication-service:0.17.0
+    # Matrix RTC Backend (LiveKit JWT Service)
+    - name: ghcr.io/element-hq/lk-jwt-service:0.3.0
+    # LiveKit Server (for Matrix RTC)
+    - name: docker.io/livekit/livekit-server:v1.9.1
+    # PostgreSQL
+    - name: docker.io/library/postgres:17.2-alpine
+    # HAProxy
+    - name: docker.io/library/haproxy:3.2-alpine
+    # Redis (for Synapse)
+    - name: docker.io/library/redis:7.4-alpine
+    # Matrix Tools (used for init jobs and utilities)
+    - name: ghcr.io/element-hq/ess-helm/matrix-tools:0.5.6

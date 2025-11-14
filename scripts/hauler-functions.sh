@@ -27,6 +27,15 @@ log_error() {
   fi
 }
 
+# Use HAULER_BIN if set, otherwise default to 'hauler'
+hauler_cmd() {
+  if [ -n "$HAULER_BIN" ]; then
+    "$HAULER_BIN" "$@"
+  else
+    hauler "$@"
+  fi
+}
+
 # Start Hauler registry service with retry logic
 # Args: $1=port, $2=store_name, $3=store_path, $4=log_file, $5=pid_file
 start_hauler_registry() {
@@ -38,7 +47,7 @@ start_hauler_registry() {
   
   log_info "Starting Hauler registry on port $port..."
   cd "$store_path" || return 1
-  nohup hauler store serve registry --port "$port" --store "$store_name" > "$log_file" 2>&1 &
+  nohup hauler_cmd store serve registry --port "$port" --store "$store_name" > "$log_file" 2>&1 &
   echo $! > "$pid_file"
   
   # Wait for registry to be ready with retries
@@ -74,9 +83,9 @@ start_hauler_fileserver() {
   # Create directory if specified
   if [ -n "$directory" ]; then
     mkdir -p "$directory"
-    nohup hauler store serve fileserver --port "$port" --store "$store_name" --directory "$directory" > "$log_file" 2>&1 &
+    nohup hauler_cmd store serve fileserver --port "$port" --store "$store_name" --directory "$directory" > "$log_file" 2>&1 &
   else
-    nohup hauler store serve fileserver --port "$port" --store "$store_name" > "$log_file" 2>&1 &
+    nohup hauler_cmd store serve fileserver --port "$port" --store "$store_name" > "$log_file" 2>&1 &
   fi
   
   echo $! > "$pid_file"
