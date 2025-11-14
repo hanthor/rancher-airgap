@@ -37,9 +37,10 @@ start_hauler_registry() {
   local pid_file="$5"
   
   log_info "Starting Hauler registry on port $port..."
-  cd "$store_path" || return 1
+  pushd "$store_path" > /dev/null || return 1
   nohup hauler store serve registry --port "$port" --store "$store_name" > "$log_file" 2>&1 &
   echo $! > "$pid_file"
+  popd > /dev/null || true
   
   # Wait for registry to be ready with retries
   local retries=0
@@ -69,7 +70,7 @@ start_hauler_fileserver() {
   local directory="${6:-}"
   
   log_info "Starting Hauler fileserver on port $port..."
-  cd "$store_path" || return 1
+  pushd "$store_path" > /dev/null || return 1
   
   # Create directory if specified
   if [ -n "$directory" ]; then
@@ -80,6 +81,7 @@ start_hauler_fileserver() {
   fi
   
   echo $! > "$pid_file"
+  popd > /dev/null || true
   
   # Wait for fileserver to be ready with retries
   local retries=0
