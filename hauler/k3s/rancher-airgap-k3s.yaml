@@ -32,6 +32,10 @@ spec:
     # Note: K3s runs in WSL2 on Windows, using the Linux binary
     # macOS ARM64 (K3s runs in containers/VMs on macOS)
     # Note: K3s doesn't have native macOS binaries - runs via Docker Desktop/Rancher Desktop
+    # Rancher Desktop for macOS ARM64
+    - path: https://github.com/rancher-sandbox/rancher-desktop/releases/download/v1.20.1/Rancher.Desktop-1.20.1.aarch64.dmg
+      name: rancher-desktop-1.20.1-mac.dmg
+    # To configure Rancher Desktop to use Hauler registry for K3s images, see macOS setup instructions.
 ---
 apiVersion: content.hauler.cattle.io/v1
 kind: Images

@@ -1,0 +1,24 @@
+apiVersion: content.hauler.cattle.io/v1
+kind: Files
+metadata:
+  name: rancher-airgap-files-macos
+spec:
+  files:
+    # k3s ARM64
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s-airgap-images-arm64.tar.zst
+      name: k3s-airgap-images-arm64.tar.zst
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/sha256sum-arm64.txt
+      name: sha256sum-arm64.txt
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s-arm64
+      name: k3s-arm64
+    # Rancher Desktop for macOS ARM64
+    - path: https://github.com/rancher-sandbox/rancher-desktop/releases/download/v1.13.1/Rancher.Desktop-1.13.1-mac.dmg
+      name: rancher-desktop-1.13.1-mac.dmg
+
+    # Add other macOS tools/packages here as needed
+    # kubectl for macOS ARM64
+    - path: https://dl.k8s.io/release/v1.29.4/bin/darwin/arm64/kubectl
+      name: kubectl
+    # k9s for macOS ARM64
+    - path: https://github.com/derailed/k9s/releases/download/v0.32.4/k9s_Darwin_arm64.tar.gz
+      name: k9s_Darwin_arm64.tar.gz

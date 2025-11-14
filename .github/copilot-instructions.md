@@ -14,6 +14,8 @@ Each product component follows a consistent tri-part YAML manifest pattern:
 2. **Charts**: Helm charts with specific versions (`kind: Charts`)
 3. **Images**: Container images from various registries (`kind: Images`)
 
+**Note:** The `platform:` field is not supported in Hauler manifests. Simply list the files with their URLs and names; Hauler will collect and package them regardless of platform.
+
 **Example**: `hauler/k3s/rancher-airgap-k3s.yaml` contains K3s installation files for multiple architectures (amd64/arm64), container images, and SELinux RPMs.
 
 **ESS Example**: `hauler/ess-helm/rancher-airgap-ess-helm.yaml` contains the ESS Helm chart and all required container images (Synapse, Element Web, MAS, PostgreSQL, etc.).
