@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PACKAGE_SCRIPT="$SCRIPT_DIR/package-airgap-ess-fixed.sh"
+PACKAGE_SCRIPT="$SCRIPT_DIR/package-airgap-ess.sh"
 PACKAGE_DIR="/tmp/airgap-ess-package"
 ZIP_NAME="Airgap-ess.zip"
 TAR_NAME="Airgap-ess.tar.gz"

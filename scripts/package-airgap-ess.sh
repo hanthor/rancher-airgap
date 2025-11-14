@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="${SCRIPT_DIR}/../../.."
+REPO_ROOT="${SCRIPT_DIR}/.."
 source "$SCRIPT_DIR/airgap-lib.sh"
 
 # Configurable variables
@@ -21,16 +21,18 @@ function main() {
     check_prerequisites "build"
     setup_directories "$PACKAGE_DIR" "$LOG_DIR"
 
-    echo "Building all Hauler stores..."
-    build_all_hauler_stores "$REPO_ROOT" "$ARCH" "$LOG_DIR"
+  echo "Syncing all Hauler stores..."
+  hauler store sync --store k3s-store --filename "$REPO_ROOT/hauler/k3s/rancher-airgap-k3s.yaml"
+  hauler store sync --store ess-store --filename "$REPO_ROOT/hauler/ess-helm/rancher-airgap-ess-helm.yaml"
+  hauler store sync --store helm-store --filename "$REPO_ROOT/hauler/helm/rancher-airgap-helm.yaml"
 
-    echo "Saving Hauler stores to archives..."
-    cd "$REPO_ROOT/hauler/k3s"
-    hauler store save --store k3s-store --filename "$PACKAGE_DIR/k3s.tar.zst"
-    cd "$REPO_ROOT/hauler/ess-helm"
-    hauler store save --store ess-store --filename "$PACKAGE_DIR/ess.tar.zst"
-    cd "$REPO_ROOT/hauler/helm"
-    hauler store save --store helm-store --filename "$PACKAGE_DIR/helm.tar.zst"
+  echo "Saving Hauler stores to archives..."
+  cd "$REPO_ROOT/hauler/k3s"
+  hauler store save --store k3s-store --filename "$PACKAGE_DIR/k3s.tar.zst"
+  cd "$REPO_ROOT/hauler/ess-helm"
+  hauler store save --store ess-store --filename "$PACKAGE_DIR/ess.tar.zst"
+  cd "$REPO_ROOT/hauler/helm"
+  hauler store save --store helm-store --filename "$PACKAGE_DIR/helm.tar.zst"
 
     echo "Copying Hauler binary..."
     cp "$(command -v hauler)" "$PACKAGE_DIR/$HAULER_BIN_NAME"
