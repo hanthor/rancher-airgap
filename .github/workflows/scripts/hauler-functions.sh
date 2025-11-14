@@ -1,3 +1,73 @@
+#!/usr/bin/env bash
+# Hauler service helpers
+# Start/stop hauler registry and fileserver and perform simple health checks
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+start_hauler_registry() {
+  local port=${1:-5002}
+  local store_path=${2:-}
+  local serve_path=${3:-}
+  local log_file=${4:-/tmp/hauler-registry.log}
+  local pid_file=${5:-/tmp/hauler-registry.pid}
+
+  echo "Starting Hauler registry on :$port (store=$store_path)..."
+  nohup hauler store serve registry --port "$port" --store "$store_path" >"$log_file" 2>&1 &
+  echo $! > "$pid_file"
+
+  # Wait for registry to respond on /v2/
+  local retries=0
+  while [ $retries -lt 30 ]; do
+    if curl -sS "http://localhost:$port/v2/" >/dev/null 2>&1; then
+      echo "Hauler registry listening on :$port"
+      return 0
+    fi
+    retries=$((retries + 1))
+    sleep 1
+  done
+
+  echo "Registry did not become healthy (see $log_file)"
+  return 1
+}
+
+start_hauler_fileserver() {
+  local port=${1:-8080}
+  local store_path=${2:-}
+  local serve_path=${3:-}
+  local log_file=${4:-/tmp/hauler-fileserver.log}
+  local pid_file=${5:-/tmp/hauler-fileserver.pid}
+  local directory=${6:-$serve_path}
+
+  echo "Starting Hauler fileserver on :$port (store=$store_path, dir=$directory)..."
+  nohup hauler store serve fileserver --port "$port" --store "$store_path" --directory "$directory" >"$log_file" 2>&1 &
+  echo $! > "$pid_file"
+
+  # Wait for fileserver root to be reachable
+  local retries=0
+  while [ $retries -lt 30 ]; do
+    if curl -sS "http://localhost:$port/" >/dev/null 2>&1; then
+      echo "Hauler fileserver listening on :$port"
+      return 0
+    fi
+    retries=$((retries + 1))
+    sleep 1
+  done
+
+  echo "Fileserver did not become healthy (see $log_file)"
+  return 1
+}
+
+stop_hauler_services() {
+  echo "Stopping hauler services..."
+  # Kill any hauler processes started by these scripts
+  pkill -f "hauler store serve" || true
+  # Remove pid files if present
+  rm -f /tmp/hauler-*-registry.pid /tmp/hauler-*-fileserver.pid /tmp/*-registry.pid /tmp/*-fileserver.pid || true
+}
+
+export -f start_hauler_registry start_hauler_fileserver stop_hauler_services
 #!/bin/bash
 # Shared Hauler Functions for Airgap Testing
 # Used by both local airgap tests and GitHub Actions workflows

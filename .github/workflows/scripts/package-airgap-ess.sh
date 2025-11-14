@@ -35,6 +35,13 @@ function main() {
     echo "Copying Hauler binary..."
     cp "$(command -v hauler)" "$PACKAGE_DIR/$HAULER_BIN_NAME"
 
+    # Include any Windows Rancher Desktop installer or Windows hauler binary if present
+    if [ -d "$REPO_ROOT/hauler/windows" ]; then
+      echo "Including Windows artifacts from $REPO_ROOT/hauler/windows"
+      mkdir -p "$PACKAGE_DIR/hauler/windows"
+      cp -r "$REPO_ROOT/hauler/windows/"* "$PACKAGE_DIR/hauler/windows/" || true
+    fi
+
     echo "Creating deploy script..."
     cat > "$PACKAGE_DIR/$DEPLOY_SCRIPT" <<'EODEP'
 #!/usr/bin/env bash
@@ -69,6 +76,59 @@ EODEP
     echo "Copying function libraries..."
     cp "$SCRIPT_DIR/airgap-lib.sh" "$PACKAGE_DIR/airgap-lib.sh"
     cp "$SCRIPT_DIR/hauler-functions.sh" "$PACKAGE_DIR/hauler-functions.sh"
+
+  # Create a Windows deploy helper (PowerShell) if Windows artifacts were included
+  if [ -d "$PACKAGE_DIR/hauler/windows" ]; then
+    cat > "$PACKAGE_DIR/deploy-windows-rd.ps1" <<'EOPS'
+# Deploy Rancher Desktop & configure air-gapped K3s (Windows helper)
+# This script is intended as a guided helper. It will attempt to run the
+# Rancher Desktop installer if one is packaged and will print the recommended
+# post-install configuration steps following the Rancher Desktop air-gapped
+# guidance: https://docs.rancherdesktop.io/how-to-guides/running-air-gapped/
+
+param(
+  [switch]$InstallSilently
+)
+
+Write-Host "Rancher Desktop Windows deploy helper"
+
+$pkgPath = Join-Path -Path $PSScriptRoot -ChildPath 'hauler/windows'
+Get-ChildItem -Path $pkgPath -File | ForEach-Object { Write-Host "Found: $($_.Name)" }
+
+# Find an installer (exe or msi)
+$installer = Get-ChildItem -Path $pkgPath -Include *.exe,*.msi -File -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $installer) {
+  Write-Host "No Rancher Desktop installer found in $pkgPath. Please copy the installer to that folder and re-run."
+  exit 1
+}
+
+Write-Host "Installer: $($installer.FullName)"
+if ($InstallSilently) {
+  Write-Host "Running installer silently (may require specific vendor args)..."
+  if ($installer.Extension -ieq '.msi') {
+    Start-Process msiexec -ArgumentList "/i `"$($installer.FullName)`" /qn" -Wait -NoNewWindow
+  } else {
+    # Many Rancher Desktop installers are interactive; check vendor docs for silent flags
+    Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait -NoNewWindow
+  }
+} else {
+  Write-Host "Please run the installer interactively: $($installer.FullName)"
+}
+
+Write-Host "\nAfter installing Rancher Desktop, follow these recommended steps (see docs):"
+Write-Host " 1) Open Rancher Desktop -> Settings -> Kubernetes and select the k3s runtime."
+Write-Host " 2) Ensure the container runtime is configured to use containerd (default)."
+Write-Host " 3) Configure a local registry mirror pointing to the packaged Hauler registry."
+Write-Host "    - Example: add http://localhost:5002 as an insecure registry/mirror in Rancher Desktop settings"
+Write-Host " 4) Use docker / nerdctl inside Rancher Desktop to load any images or charts as needed."
+Write-Host " 5) To load Hauler stores into a local registry, extract the package on Windows and run the included hauler binary for Windows (if provided) or follow the hauler docs."
+
+Write-Host "Notes:"
+Write-Host " - This helper does not automatically reconfigure Rancher Desktop for every Windows version; consult the upstream guide: https://docs.rancherdesktop.io/how-to-guides/running-air-gapped/"
+Write-Host " - If you want automation for modifying Rancher Desktop settings.json, please share your target Windows versions and I can add registry-safe edits."
+EOPS
+    chmod +x "$PACKAGE_DIR/deploy-windows-rd.ps1" || true
+  fi
 
     echo "Packaging everything into $ZIP_NAME..."
     cd "$PACKAGE_DIR"
